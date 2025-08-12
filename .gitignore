@@ -34,7 +34,8 @@ yarn-error.log*
 .env*
 
 # credential files
-*.json
+# Ignore only the service account JSON (do not ignore all JSON files)
+aidma-461403-70c3e0f2e564.json
 
 # vercel
 .vercel
