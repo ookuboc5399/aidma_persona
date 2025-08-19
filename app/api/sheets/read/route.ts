@@ -34,73 +34,78 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid Master Sheet URL' }, { status: 400 });
     }
 
-    const listRange = 'シート1!D2:H';
+    // B列のスプレッドシートURLを取得
     const listResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: masterSheetId,
-      range: listRange,
+      range: 'B:B',
     });
 
     const allRows = listResponse.data.values;
     if (!allRows || allRows.length === 0) return NextResponse.json({ data: [] });
 
-    const filteredRows = allRows.filter(row => row[4] === '未');
-    if (filteredRows.length === 0) return NextResponse.json({ data: [] });
-
-    const promises = filteredRows.map(async (row) => {
-      const targetSheetName = row[0];
-      const targetSheetUrl = row[1];
-      const originalIndex = allRows.findIndex(r => r === row);
-
-      if (!targetSheetName || !targetSheetUrl) {
-        return { rowIndex: originalIndex + 2, error: 'Incomplete row data' };
+    const promises = allRows.map(async (row, index) => {
+      if (!row || !row[0]) {
+        return { 
+          rowIndex: index + 1, 
+          error: 'No URL found in this row'
+        };
       }
 
+      const targetSheetUrl = row[0];
       const targetSheetId = getSheetIdFromUrl(targetSheetUrl);
+      
       if (!targetSheetId) {
-        return { rowIndex: originalIndex + 2, error: 'Invalid target URL' };
+        return { 
+          rowIndex: index + 1, 
+          error: 'Invalid sheet URL' 
+        };
       }
 
       try {
-        const ranges = [
-          'C2', 'F2', 'C4', 'F3', 'C5', 'C6', 'F6',
-          'C15', 'C16', 'C17', 'C18',
-          'C20', 'C22', 'C24', 'C26',
-          'C3' // 業界情報を追加
-        ].map(cell => `${targetSheetName}!${cell}`);
-        
-        const response = await sheets.spreadsheets.values.batchGet({
+        // 対象シートからA列（企業名）とD列（会話データ）を取得
+        const response = await sheets.spreadsheets.values.get({
           spreadsheetId: targetSheetId,
-          ranges,
+          range: 'A:D',
         });
 
-        const values = response.data.valueRanges?.map(range => range.values?.[0]?.[0] || '') || [];
+        const targetRows = response.data.values;
+        if (!targetRows || targetRows.length === 0) {
+          return {
+            rowIndex: index + 1,
+            error: 'No data found in target sheet'
+          };
+        }
 
-        const receptionistTalk = [values[7], values[8], values[9], values[10]].filter(Boolean).join('\n');
+        // A列から企業名を取得（最初の行）
+        const companyName = targetRows[0]?.[0] || '不明な企業';
+        
+        // D列から会話データを取得（すべての行）
+        const conversationData = targetRows
+          .map(row => row[3])
+          .filter(Boolean)
+          .join('\n');
 
-        const extractedData = {
-          representative: values[0],
-          address: values[1],
-          employees: values[2],
-          website: values[3],
-          founded: values[4],
-          businessInfo: values[5],
-          marketingPurpose: values[6],
-          receptionistTalk: receptionistTalk,
-          targetTalk: values[11],
-          closingTalk: values[12],
-          apptConfirmationTalk: values[13],
-          hearingTalk: values[14],
-          industry: values[15], // 業界情報を追加
-        };
+        if (!conversationData) {
+          return {
+            rowIndex: index + 1,
+            error: 'No conversation data found in column D'
+          };
+        }
 
         return {
-          rowIndex: originalIndex + 2,
+          rowIndex: index + 1,
           targetSheetId,
-          data: extractedData,
+          sheetUrl: targetSheetUrl,
+          companyName,
+          conversationData,
         };
+
       } catch (e: unknown) {
         const errorMessage = getErrorMessage(e);
-        return { rowIndex: originalIndex + 2, error: errorMessage };
+        return { 
+          rowIndex: index + 1, 
+          error: errorMessage 
+        };
       }
     });
 
