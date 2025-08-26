@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
 
     // キーワードがある場合は検索条件に追加
     if (challengeKeywords && challengeKeywords.length > 0) {
-      const keywordConditions = challengeKeywords.map(keyword => 
+      const keywordConditions = challengeKeywords.map((keyword: string) => 
         `(BUSINESS_DESCRIPTION LIKE '%${keyword.replace(/'/g, "''")}%' OR 
           STRENGTHS LIKE '%${keyword.replace(/'/g, "''")}%' OR
           BUSINESS_TAGS LIKE '%${keyword.replace(/'/g, "''")}%' OR
@@ -80,12 +80,12 @@ export async function POST(req: NextRequest) {
     console.log(`Found ${solutionCompanies.length} potential solution companies`);
 
     // マッチングスコアを計算
-    const matches = solutionCompanies.map((company, index) => {
+    const matches = solutionCompanies.map((company) => {
       let score = 0;
-      let reasons = [];
+      const reasons: string[] = [];
 
       // 業界マッチング
-      if (company.INDUSTRY && challengeKeywords?.some(keyword => 
+      if (company.INDUSTRY && challengeKeywords?.some((keyword: string) => 
         company.INDUSTRY.toLowerCase().includes(keyword.toLowerCase())
       )) {
         score += 0.3;
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
       }
 
       // 事業内容マッチング
-      if (company.BUSINESS_DESCRIPTION && challengeKeywords?.some(keyword => 
+      if (company.BUSINESS_DESCRIPTION && challengeKeywords?.some((keyword: string) => 
         company.BUSINESS_DESCRIPTION.toLowerCase().includes(keyword.toLowerCase())
       )) {
         score += 0.4;
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       }
 
       // 強みマッチング
-      if (company.STRENGTHS && challengeKeywords?.some(keyword => 
+      if (company.STRENGTHS && challengeKeywords?.some((keyword: string) => 
         company.STRENGTHS.toLowerCase().includes(keyword.toLowerCase())
       )) {
         score += 0.3;

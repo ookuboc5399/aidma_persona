@@ -41,7 +41,12 @@ export async function POST(req: NextRequest) {
       conversationDataPreview: testData.conversationData.substring(0, 200) + '...'
     });
 
-    const results = {
+    const results: {
+      step1: { success: boolean; data: any; error: string | null };
+      step2: { success: boolean; data: any; error: string | null };
+      step3: { success: boolean; data: any; error: string | null; isDuplicate?: boolean };
+      step4: { success: boolean; data: any; error: string | null };
+    } = {
       step1: { success: false, data: null, error: null },
       step2: { success: false, data: null, error: null },
       step3: { success: false, data: null, error: null },
@@ -86,7 +91,8 @@ export async function POST(req: NextRequest) {
           extractedChallenges: results.step1.data.extractedChallenges,
           challenges: results.step1.data.challenges,
           processingInfo: results.step1.data.processingInfo
-        }
+        },
+        error: null
       };
       console.log('統合抽出で課題も抽出済み');
     } else {

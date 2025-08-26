@@ -4,7 +4,11 @@ import { extractCompanyNameDetailed } from '../../../../lib/utils';
 // 既存データを使用してマッチングを続行する関数
 async function continueWithExistingData(
   companyName: string, 
-  extractResult: any, 
+  extractResult: { 
+    extractedChallenges?: string[];
+    challenges?: { challenges: Array<{ keywords?: string[] }> };
+    companyInfo?: any;
+  }, 
   req: NextRequest
 ) {
   try {
@@ -12,7 +16,7 @@ async function continueWithExistingData(
     
     // 既存データから課題キーワードを抽出
     const challengeKeywords = extractResult.challenges?.challenges 
-      ? extractResult.challenges.challenges.flatMap((challenge: any) => challenge.keywords || [])
+      ? extractResult.challenges.challenges.flatMap((challenge: { keywords?: string[] }) => challenge.keywords || [])
       : [];
 
     const matchResponse = await fetch(`${req.nextUrl.origin}/api/snowflake/internal-match`, {
@@ -134,13 +138,13 @@ export async function POST(req: NextRequest) {
       throw new Error(`Snowflake保存失敗: ${error.error}`);
     }
 
-    const storeResult = await storeResponse.json();
+    await storeResponse.json();
     console.log('✅ 企業情報と課題をSnowflakeに保存完了');
 
     // Step 4: Snowflake AI マッチング
     console.log('\n=== Step 3: Snowflake AI マッチング ===');
     const challengeKeywords = extractResult.challenges?.challenges 
-      ? extractResult.challenges.challenges.flatMap((challenge: any) => challenge.keywords || [])
+      ? extractResult.challenges.challenges.flatMap((challenge: { keywords?: string[] }) => challenge.keywords || [])
       : [];
 
     const matchResponse = await fetch(`${req.nextUrl.origin}/api/snowflake/internal-match`, {

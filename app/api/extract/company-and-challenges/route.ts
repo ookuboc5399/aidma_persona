@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { UnifiedExtractionResult, ChallengeAnalysis, CompanyInfo, Challenge } from '../../../types';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -20,9 +21,9 @@ function splitTextIntoChunks(text: string, maxChunkSize: number = 50000): string
 }
 
 // 複数チャンクの分析結果を統合する関数
-function mergeAnalyses(analyses: any[]): any {
-  const allChallenges: any[] = [];
-  const allStrengths: any[] = [];
+function mergeAnalyses(analyses: UnifiedExtractionResult[]): UnifiedExtractionResult {
+      const allChallenges: Challenge[] = [];
+    const allStrengths: Array<{title: string; description: string; category: string}> = [];
   const allBusinessTags: string[] = [];
   const allOriginalTags: string[] = [];
   const businessDescriptions: string[] = [];
@@ -127,7 +128,7 @@ export async function POST(req: NextRequest) {
           if (model === 'gpt-5-mini-2025-08-07') {
             console.log('GPT-5モデルを使用中...');
             try {
-              const testCompletion = await openai.chat.completions.create({
+              await openai.chat.completions.create({
                 model: 'gpt-5-mini-2025-08-07',
                 messages: [{ role: 'user', content: 'test' }],
                 max_completion_tokens: 10
@@ -210,14 +211,14 @@ ${chunk}
             throw new Error('ChatGPTが空のレスポンスを返しました');
           }
 
-          let parsedData;
-          try {
-            parsedData = JSON.parse(content);
-          } catch (parseError) {
-            console.error('JSON解析エラー:', parseError);
-            console.error('生のレスポンス:', content);
-            throw new Error(`JSON解析に失敗しました: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
-          }
+                                let parsedData: UnifiedExtractionResult;
+                      try {
+                        parsedData = JSON.parse(content);
+                      } catch (parseError) {
+                        console.error('JSON解析エラー:', parseError);
+                        console.error('生のレスポンス:', content);
+                        throw new Error(`JSON解析に失敗しました: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+                      }
 
           // 抽出された企業情報と課題をログに表示
           console.log(`=== ChatGPT 統合抽出 (チャンク ${chunkIndex + 1}/${totalChunks}) ===`);
@@ -233,7 +234,7 @@ ${chunk}
 
           if (parsedData.challenges?.challenges && parsedData.challenges.challenges.length > 0) {
             console.log('\n抽出された課題:');
-            parsedData.challenges.challenges.forEach((challenge: any, index: number) => {
+            parsedData.challenges.challenges.forEach((challenge: Challenge, index: number) => {
               console.log(`${index + 1}. ${challenge.title} (${challenge.category})`);
               console.log(`   説明: ${challenge.description}`);
               console.log(`   緊急度: ${challenge.urgency}`);
@@ -253,12 +254,20 @@ ${chunk}
           console.error(`チャンク ${chunkIndex + 1} の処理中にエラーが発生しました:`, error);
           console.error(`チャンク内容（最初の200文字）:`, chunk.substring(0, 200));
           return {
-            company_info: null,
+            company_info: {
+              company_name: '',
+              industry: '',
+              business_description: '',
+              strengths: [],
+              business_tags: [],
+              original_tags: [],
+              region: '',
+              prefecture: ''
+            },
             challenges: {
               challenges: [],
               summary: `チャンク${chunkIndex + 1}の処理中にエラーが発生しました: ${error instanceof Error ? error.message : 'Unknown error'}`
-            },
-            error: error instanceof Error ? error.message : 'Unknown error'
+            }
           };
         }
       });
@@ -276,7 +285,7 @@ ${chunk}
     const mergedAnalysis = mergeAnalyses(analyses);
 
     // 抽出された課題をテキスト配列に変換
-    const extractedChallenges = mergedAnalysis.challenges?.challenges?.map((challenge: any) => 
+    const extractedChallenges = mergedAnalysis.challenges?.challenges?.map((challenge: Challenge) => 
       `${challenge.category}: ${challenge.title} - ${challenge.description}`
     ) || [mergedAnalysis.challenges?.summary || '課題の抽出に失敗しました'];
 

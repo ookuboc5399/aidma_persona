@@ -167,7 +167,12 @@ export default function Home() {
     try {
       // データソースとAI手法に基づいてAPIエンドポイントを選択
       let apiEndpoint: string = '';
-      let requestBody: any = {
+      const requestBody: {
+        companyName: string;
+        conversationData: string;
+        sourceUrl: string;
+        extractCompanyInfo: boolean;
+      } = {
         companyName: companyInfo.companyName,
         conversationData: companyInfo.conversationData,
         sourceUrl: companyInfo.sheetUrl,
