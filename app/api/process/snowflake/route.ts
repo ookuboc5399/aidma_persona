@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
         conversationData,
         sourceUrl,
       }),
+      signal: AbortSignal.timeout(15 * 60 * 1000), // 15分
     });
 
     if (!challengeResponse.ok) {
@@ -30,8 +31,30 @@ export async function POST(req: NextRequest) {
     const challengeResult = await challengeResponse.json();
     const challengeId = challengeResult.challengeId;
 
-    // ステップ2: マッチング実行
-    const matchingResponse = await fetch(`${req.nextUrl.origin}/api/matching/find`, {
+    // ステップ2: Snowflakeテーブルにデータを保存
+    console.log('Step 2: Storing data to Snowflake...');
+    const snowflakeStoreResponse = await fetch(`${req.nextUrl.origin}/api/snowflake/store`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        companyName,
+        conversationData,
+        sourceUrl,
+        extractedChallenges: challengeResult.extractedChallenges,
+        challengeAnalysis: challengeResult.challengeAnalysis,
+      }),
+    });
+
+    if (!snowflakeStoreResponse.ok) {
+      const error = await snowflakeStoreResponse.json();
+      throw new Error(`Snowflake store failed: ${error.error}`);
+    }
+
+    const storeResult = await snowflakeStoreResponse.json();
+    console.log('✅ Snowflake data storage completed');
+
+    // ステップ3: Snowflakeマッチング実行
+    const matchingResponse = await fetch(`${req.nextUrl.origin}/api/matching/snowflake`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -41,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     if (!matchingResponse.ok) {
       const error = await matchingResponse.json();
-      throw new Error(`Matching failed: ${error.error}`);
+      throw new Error(`Snowflake matching failed: ${error.error}`);
     }
 
     const matchingResult = await matchingResponse.json();
@@ -54,13 +77,15 @@ export async function POST(req: NextRequest) {
       challengeAnalysis: challengeResult.challengeAnalysis,
       matches: matchingResult.matches,
       totalMatches: matchingResult.totalMatches,
+      snowflakeCandidates: matchingResult.snowflakeCandidates,
+      dataSource: 'snowflake'
     });
 
   } catch (error: unknown) {
-    console.error('Full process error:', error);
+    console.error('Snowflake full process error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: `Process failed: ${errorMessage}` },
+      { error: `Snowflake process failed: ${errorMessage}` },
       { status: 500 }
     );
   }
