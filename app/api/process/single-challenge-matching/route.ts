@@ -165,26 +165,11 @@ async function findMatchingCompanies(challenges: string[]): Promise<any[]> {
       console.log(`課題${index + 1}: ${challenge}`);
     });
 
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/snowflake/comprehensive-match`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ challenges })
-    });
-
-    console.log(`総合マッチングAPI レスポンス状態: ${response.status} ${response.statusText}`);
-
-    if (!response.ok) {
-      const error = await response.text();
-      console.error(`❌ 総合マッチングエラー:`, error);
-      return [{
-        challenges: challenges,
-        matches: [],
-        matchingMethod: 'comprehensive-matching',
-        error: `API Error: ${response.status} ${response.statusText}`
-      }];
-    }
-
-    const result = await response.json();
+    // Vercel環境対応: 直接関数を呼び出し（APIコール回避）
+    const { comprehensiveMatchChallenges } = await import('../../snowflake/comprehensive-match/route');
+    console.log('🔄 直接関数呼び出しでマッチング処理実行');
+    
+    const result = await comprehensiveMatchChallenges(challenges);
     console.log(`✅ 総合マッチング結果: ${result.totalMatches}社が選出されました`);
     
     if (result.comprehensiveMatches && result.comprehensiveMatches.length > 0) {
@@ -203,13 +188,13 @@ async function findMatchingCompanies(challenges: string[]): Promise<any[]> {
       totalScore: result.comprehensiveMatches?.reduce((sum: number, match: any) => sum + match.total_score, 0) || 0
     }];
 
-  } catch (fetchError) {
-    console.error(`🚨 総合マッチングfetchエラー:`, fetchError);
+  } catch (matchingError) {
+    console.error(`🚨 総合マッチング処理エラー:`, matchingError);
     return [{
       challenges: challenges,
       matches: [],
       matchingMethod: 'comprehensive-matching',
-      error: `Connection Error: ${getErrorMessage(fetchError)}`
+      error: `Processing Error: ${getErrorMessage(matchingError)}`
     }];
   }
 }

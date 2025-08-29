@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { snowflakeClient } from '../../../../lib/snowflake';
 
-export async function POST(req: NextRequest) {
+// 直接呼び出し可能な総合マッチング関数をエクスポート
+export async function comprehensiveMatchChallenges(challenges: string[]) {
   try {
-    const { challenges } = await req.json();
-
     if (!challenges || !Array.isArray(challenges) || challenges.length === 0) {
-      return NextResponse.json(
-        { error: 'Challenges array is required' },
-        { status: 400 }
-      );
+      throw new Error('Challenges array is required');
     }
 
     console.log('=== Snowflake 総合課題マッチング開始 ===');
@@ -182,7 +178,7 @@ export async function POST(req: NextRequest) {
       console.log(`  対応領域: 営業${match.coverage_areas.sales_acquisition ? '○' : '×'} / マーケ${match.coverage_areas.marketing_strategy ? '○' : '×'} / デジタル${match.coverage_areas.digital_performance ? '○' : '×'}`);
     });
 
-    return NextResponse.json({
+    return {
       success: true,
       inputChallenges: challenges,
       totalMatches: comprehensiveMatches.length,
@@ -195,13 +191,25 @@ export async function POST(req: NextRequest) {
       },
       dataSource: 'snowflake-comprehensive-matching',
       matchingMethod: 'multi-challenge-comprehensive-scoring'
-    });
+    };
 
   } catch (error: unknown) {
     console.error('Snowflake 総合課題マッチングエラー:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    throw new Error(`Snowflake 総合課題マッチング失敗: ${errorMessage}`);
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { challenges } = await req.json();
+    const result = await comprehensiveMatchChallenges(challenges);
+    return NextResponse.json(result);
+  } catch (error: unknown) {
+    console.error('API総合課題マッチングエラー:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: `Snowflake 総合課題マッチング失敗: ${errorMessage}` },
+      { error: errorMessage },
       { status: 500 }
     );
   }
