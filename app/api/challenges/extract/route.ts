@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
             // GPT-5が利用できない場合のフォールバック
             try {
               // テスト用の小さなリクエストでGPT-5の利用可能性を確認
-              const testCompletion = await openai.chat.completions.create({
+              await openai.chat.completions.create({
                 model: 'gpt-5-mini-2025-08-07',
                 messages: [{ role: 'user', content: 'test' }],
                 max_completion_tokens: 10

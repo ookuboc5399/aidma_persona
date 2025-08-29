@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { UnifiedExtractionResult, ChallengeAnalysis, CompanyInfo, Challenge } from '../../../types';
+import { UnifiedExtractionResult, Challenge } from '../../../types';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -211,14 +211,25 @@ ${chunk}
             throw new Error('ChatGPTが空のレスポンスを返しました');
           }
 
-                                let parsedData: UnifiedExtractionResult;
-                      try {
-                        parsedData = JSON.parse(content);
-                      } catch (parseError) {
-                        console.error('JSON解析エラー:', parseError);
-                        console.error('生のレスポンス:', content);
-                        throw new Error(`JSON解析に失敗しました: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
-                      }
+          // ChatGPTレスポンスからJSONマークダウンを除去
+          let cleanContent = content.trim();
+          if (cleanContent.startsWith('```json')) {
+            cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+          } else if (cleanContent.startsWith('```')) {
+            cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+          }
+          
+          console.log(`クリーニング後のレスポンス（最初の200文字）: ${cleanContent.substring(0, 200)}...`);
+
+          let parsedData: UnifiedExtractionResult;
+          try {
+            parsedData = JSON.parse(cleanContent);
+          } catch (parseError) {
+            console.error('JSON解析エラー:', parseError);
+            console.error('生のレスポンス:', content);
+            console.error('クリーニング後レスポンス:', cleanContent);
+            throw new Error(`JSON解析に失敗しました: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`);
+          }
 
           // 抽出された企業情報と課題をログに表示
           console.log(`=== ChatGPT 統合抽出 (チャンク ${chunkIndex + 1}/${totalChunks}) ===`);

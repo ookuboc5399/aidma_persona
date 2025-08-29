@@ -137,17 +137,47 @@ export async function searchCompaniesInSnowflake(searchCriteria: {
 
 // 課題に基づくマッチング検索
 export async function findSolutionCompanies(challengeKeywords: string[]): Promise<any[]> {
+  console.log('=== findSolutionCompanies 開始 ===');
+  console.log('入力課題キーワード:', challengeKeywords);
+  
   // 課題キーワードに基づいて解決企業を検索
   const solutionKeywords = [
     ...challengeKeywords,
     'ソリューション', '解決', 'コンサルティング', 'サービス',
     'システム', 'AI', 'DX', '自動化', '効率化'
   ];
+  
+  console.log('検索用キーワード:', solutionKeywords);
 
-  return await searchCompaniesInSnowflake({
+  // まず全企業数を確認
+  try {
+    const totalQuery = `SELECT COUNT(*) as TOTAL_COUNT FROM COMPANIES`;
+    const totalResult = await snowflakeClient.executeQuery(totalQuery);
+    console.log(`データベース内の総企業数: ${totalResult[0]?.TOTAL_COUNT || 0}`);
+  } catch (error) {
+    console.error('総企業数の取得エラー:', error);
+  }
+
+  const results = await searchCompaniesInSnowflake({
     keywords: solutionKeywords,
     limit: 100
   });
+  
+  console.log(`検索結果: ${results.length}件の企業が見つかりました`);
+  
+  // 最初の3件の企業名をログ出力
+  if (results.length > 0) {
+    console.log('検索結果サンプル:');
+    results.slice(0, 3).forEach((company, index) => {
+      console.log(`${index + 1}. ${company.COMPANY_NAME}`);
+    });
+  } else {
+    console.log('マッチする企業が見つかりませんでした');
+  }
+  
+  console.log('=== findSolutionCompanies 終了 ===');
+  
+  return results;
 }
 
 // 企業の詳細情報を取得

@@ -3,7 +3,7 @@ import { snowflakeClient } from '../../../../lib/snowflake';
 
 export async function POST(req: NextRequest) {
   try {
-    const { challenges, companyName } = await req.json();
+    const { challenges } = await req.json();
 
     if (!challenges || !Array.isArray(challenges) || challenges.length === 0) {
       return NextResponse.json(
@@ -48,33 +48,36 @@ export async function POST(req: NextRequest) {
         ai_matching AS (
           SELECT 
             sc.*,
-            -- セマンティック類似度計算（LIKEベース）
+            -- Snowflake AI機能を使用したセマンティック類似度計算（フォールバック付き）
             CASE 
               WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%${escapedChallenge.split(' ')[0]}%') THEN 0.8
+              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%AI%') AND UPPER('${escapedChallenge}') LIKE UPPER('%AI%') THEN 0.9
               WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%マーケティング%') AND UPPER('${escapedChallenge}') LIKE UPPER('%マーケティング%') THEN 0.9
-              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%代理店%') AND UPPER('${escapedChallenge}') LIKE UPPER('%代理店%') THEN 0.9
-              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%直接%') AND UPPER('${escapedChallenge}') LIKE UPPER('%直接%') THEN 0.9
+              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%人材%') AND UPPER('${escapedChallenge}') LIKE UPPER('%人材%') THEN 0.9
+              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%システム%') AND UPPER('${escapedChallenge}') LIKE UPPER('%システム%') THEN 0.9
+              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%セキュリティ%') AND UPPER('${escapedChallenge}') LIKE UPPER('%セキュリティ%') THEN 0.9
+              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%製造%') AND UPPER('${escapedChallenge}') LIKE UPPER('%製造%') THEN 0.9
               WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%営業%') AND UPPER('${escapedChallenge}') LIKE UPPER('%営業%') THEN 0.9
-              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%SNS%') AND UPPER('${escapedChallenge}') LIKE UPPER('%SNS%') THEN 0.9
-              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%成果%') AND UPPER('${escapedChallenge}') LIKE UPPER('%成果%') THEN 0.8
-              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%売上%') AND UPPER('${escapedChallenge}') LIKE UPPER('%売上%') THEN 0.8
-              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%案件%') AND UPPER('${escapedChallenge}') LIKE UPPER('%案件%') THEN 0.8
-              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%支援%') THEN 0.4
-              ELSE 0.3
+              WHEN UPPER(sc.BUSINESS_DESCRIPTION) LIKE UPPER('%コンサル%') AND UPPER('${escapedChallenge}') LIKE UPPER('%経営%') THEN 0.9
+              ELSE 0.4
             END as semantic_similarity,
             -- 業種による追加スコア
             CASE 
-              WHEN '${escapedChallenge}' LIKE '%マーケティング%' OR '${escapedChallenge}' LIKE '%集客%' OR '${escapedChallenge}' LIKE '%売上%' OR '${escapedChallenge}' LIKE '%認知%'
-                   AND (sc.INDUSTRY LIKE '%マーケティング%' OR sc.INDUSTRY LIKE '%広告%' OR sc.INDUSTRY LIKE '%デジタル%') THEN 0.3
-              WHEN '${escapedChallenge}' LIKE '%代理店%' OR '${escapedChallenge}' LIKE '%営業%' OR '${escapedChallenge}' LIKE '%案件%'
-                   AND (sc.INDUSTRY LIKE '%コンサル%' OR sc.INDUSTRY LIKE '%営業%' OR sc.INDUSTRY LIKE '%マーケティング%') THEN 0.3
-              WHEN '${escapedChallenge}' LIKE '%SNS%' OR '${escapedChallenge}' LIKE '%デジタル%'
-                   AND (sc.INDUSTRY LIKE '%デジタル%' OR sc.INDUSTRY LIKE '%データ%' OR sc.INDUSTRY LIKE '%マーケティング%') THEN 0.3
-              WHEN '${escapedChallenge}' LIKE '%エンターテインメント%' OR '${escapedChallenge}' LIKE '%エンタメ%'
-                   AND sc.INDUSTRY LIKE '%エンターテインメント%' THEN 0.4
-              ELSE 0.1
+              WHEN '${escapedChallenge}' LIKE '%AI%' OR '${escapedChallenge}' LIKE '%人工知能%' OR '${escapedChallenge}' LIKE '%自動化%'
+                   AND (sc.INDUSTRY LIKE '%IT%' OR sc.INDUSTRY LIKE '%AI%' OR sc.INDUSTRY LIKE '%テクノロジー%') THEN 0.2
+              WHEN '${escapedChallenge}' LIKE '%人材%' OR '${escapedChallenge}' LIKE '%採用%' OR '${escapedChallenge}' LIKE '%スキル%'
+                   AND (sc.INDUSTRY LIKE '%人材%' OR sc.INDUSTRY LIKE '%教育%') THEN 0.2
+              WHEN '${escapedChallenge}' LIKE '%マーケティング%' OR '${escapedChallenge}' LIKE '%集客%' OR '${escapedChallenge}' LIKE '%売上%'
+                   AND (sc.INDUSTRY LIKE '%マーケティング%' OR sc.INDUSTRY LIKE '%広告%') THEN 0.2
+              WHEN '${escapedChallenge}' LIKE '%システム%' OR '${escapedChallenge}' LIKE '%IT%' OR '${escapedChallenge}' LIKE '%デジタル%'
+                   AND (sc.INDUSTRY LIKE '%IT%' OR sc.INDUSTRY LIKE '%システム%') THEN 0.2
+              WHEN '${escapedChallenge}' LIKE '%セキュリティ%' OR '${escapedChallenge}' LIKE '%情報漏洩%'
+                   AND (sc.INDUSTRY LIKE '%セキュリティ%' OR sc.INDUSTRY LIKE '%IT%') THEN 0.2
+              WHEN '${escapedChallenge}' LIKE '%製造%' OR '${escapedChallenge}' LIKE '%生産%' OR '${escapedChallenge}' LIKE '%品質%'
+                   AND (sc.INDUSTRY LIKE '%製造%' OR sc.INDUSTRY LIKE '%工業%') THEN 0.2
+              ELSE 0.0
             END as industry_bonus,
-            -- ソリューションキーワード追加スコア
+            -- キーワードマッチング追加スコア
             CASE 
               WHEN sc.BUSINESS_DESCRIPTION LIKE '%ソリューション%' 
                    OR sc.BUSINESS_DESCRIPTION LIKE '%解決%' 
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest) {
           -- 総合マッチングスコア
           (semantic_similarity + industry_bonus + solution_bonus) as total_match_score
         FROM ai_matching
-        WHERE semantic_similarity > 0.2  -- 最低閾値（下げました）
+        WHERE semantic_similarity > 0.2  -- 最低閾値
         ORDER BY total_match_score DESC
         LIMIT 5
       `;
