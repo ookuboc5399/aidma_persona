@@ -1,5 +1,3 @@
-
-
 /**
  * 話者フィルターのオプション設定
  */
@@ -30,96 +28,212 @@ export function extractSpeakers(conversationData: string): string[] {
   const speakers: Set<string> = new Set();
   const lines = conversationData.split('\n');
   
-  for (const line of lines) {
-    // 話者名とタイムスタンプのパターンをマッチ
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmedLine = line.trim();
+    
+    // パターン1: 話者名とタイムスタンプのパターン
     // 例: "高山竜馬 00:00:00" または "川原美穂 00:00:10"
-    const match = line.match(/^([^\s\d]+(?:\s+[^\s\d]+)*)\s+\d{2}:\d{2}:\d{2}/);
-    if (match) {
-      speakers.add(match[1].trim());
+    const timestampMatch = trimmedLine.match(/^([^\s\d]+(?:\s+[^\s\d]+)*)\s+\d{2}:\d{2}:\d{2}/);
+    if (timestampMatch) {
+      speakers.add(timestampMatch[1].trim());
+      continue;
+    }
+    
+    // パターン2: 話者名のみの行（次の行に発言がある形式）
+    // よりシンプルな条件で話者名を検出
+    if (trimmedLine && 
+        !trimmedLine.includes('会議タイトル:') && 
+        !trimmedLine.includes('会議日時:') && 
+        !trimmedLine.includes('参加者:') && 
+        !trimmedLine.includes('文字起こし:') &&
+        !trimmedLine.includes('=== ') &&
+        !trimmedLine.match(/^\d{4}\/\d{2}\/\d{2}/) && // 日付パターンを除外
+        !trimmedLine.match(/^\d{2}:\d{2}/) && // 時刻パターンを除外
+        trimmedLine.length > 0 && 
+        trimmedLine.length < 50 && // 長すぎる行は除外
+        !trimmedLine.includes('。') && // 句点を含む行は発言の可能性が高い
+        !trimmedLine.includes('、') && // 読点を含む行は発言の可能性が高い
+        !trimmedLine.includes('？') && // 疑問符を含む行は発言の可能性が高い
+        !trimmedLine.includes('！') && // 感嘆符を含む行は発言の可能性が高い
+        !trimmedLine.includes('です') && // 丁寧語を含む行は発言の可能性が高い
+        !trimmedLine.includes('ます') && // 丁寧語を含む行は発言の可能性が高い
+        !trimmedLine.includes('ありがとう') && // 挨拶を含む行は発言の可能性が高い
+        !trimmedLine.includes('お願い') && // 挨拶を含む行は発言の可能性が高い
+        !trimmedLine.includes('すみません') && // 挨拶を含む行は発言の可能性が高い
+        !trimmedLine.includes('よろしく') && // 挨拶を含む行は発言の可能性が高い
+        !trimmedLine.includes('CLアシスタント') && // システム名を除外
+        trimmedLine.match(/^[^\s\d]+(?:\s+[^\s\d]+)*$/) && // 話者名のパターン
+        trimmedLine.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/)) { // 日本語文字を含む（ひらがな、カタカナ、漢字）
+      
+      // 次の行が空行でない場合、話者名の可能性が高い
+      const nextLine = lines[i + 1];
+      if (nextLine && nextLine.trim() && !nextLine.trim().match(/^[^\s\d]+(?:\s+[^\s\d]+)*$/)) {
+        speakers.add(trimmedLine);
+        console.log(`✅ 話者名検出: "${trimmedLine}" (行: ${i + 1})`);
+      }
+    }
+    
+    // パターン2.5: より柔軟な話者名検出（空行の後）
+    if (trimmedLine && !speakers.has(trimmedLine)) {
+      const prevLine = i > 0 ? lines[i - 1].trim() : '';
+      if (prevLine === '' && 
+          trimmedLine.match(/^[^\s\d]+(?:\s+[^\s\d]+)*$/) && 
+          trimmedLine.length > 0 && trimmedLine.length < 50 &&
+          !trimmedLine.includes('。') && !trimmedLine.includes('、') &&
+          !trimmedLine.includes('です') && !trimmedLine.includes('ます') &&
+          !trimmedLine.includes('会議タイトル:') && 
+          !trimmedLine.includes('会議日時:') && 
+          !trimmedLine.includes('参加者:') && 
+          !trimmedLine.includes('文字起こし:') &&
+          trimmedLine.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/)) {
+        // 次の行に発言があるかチェック
+        const nextLine = lines[i + 1];
+        if (nextLine && nextLine.trim() && !nextLine.trim().match(/^[^\s\d]+(?:\s+[^\s\d]+)*$/)) {
+          speakers.add(trimmedLine);
+          console.log(`✅ 話者名検出（パターン2.5）: "${trimmedLine}" (行: ${i + 1})`);
+        }
+      }
     }
   }
+  
+  // デバッグ用: 抽出された話者をログに出力
+  console.log('=== 抽出された話者一覧 ===');
+  console.log('話者数:', speakers.size);
+  Array.from(speakers).forEach((speaker, index) => {
+    console.log(`${index + 1}. ${speaker}`);
+  });
+  console.log('========================');
   
   return Array.from(speakers);
 }
 
-/**
- * 会話データをフィルターする関数
- * @param conversationData 元の会話データ
- * @param options フィルターオプション
- * @returns フィルター済みの会話データと統計情報
- */
 export function filterConversationData(conversationData: string, options: FilterOptions): FilterResult {
   const { excludeSpeakers = [], includeSpeakers = [], excludeKeywords = [] } = options;
-  
   const lines = conversationData.split('\n');
-  const filteredLines: string[] = [];
-  
-  const originalSpeakers = extractSpeakers(conversationData);
-  const includedSpeakerSet: Set<string> = new Set();
-  const excludedSpeakerSet: Set<string> = new Set();
-  
-  let excludedLines = 0;
-  let includedLines = 0;
-  let currentSpeaker: string | null = null;
-  
-  for (const line of lines) {
-    let shouldExclude = false;
+
+  const isSpeakerLine = (line: string, nextLine: string | undefined): boolean => {
+    const trimmedLine = line.trim();
+    if (!trimmedLine) return false;
+
+    const hasTimestamp = /^([^\s\d]+(?:\s+[^\s\d]+)*)\s+\d{2}:\d{2}:\d{2}/.test(trimmedLine);
+    if (hasTimestamp) return true;
+
+    const isPotentialSpeaker =
+      !trimmedLine.includes('会議タイトル:') &&
+      !trimmedLine.includes('会議日時:') &&
+      !trimmedLine.includes('参加者:') &&
+      !trimmedLine.includes('文字起こし:') &&
+      !trimmedLine.includes('=== ') &&
+      !trimmedLine.match(/^\d{4}\/\d{2}\/\d{2}/) &&
+      !trimmedLine.match(/^\d{2}:\d{2}/) &&
+      trimmedLine.length > 0 &&
+      trimmedLine.length < 50 &&
+      !trimmedLine.includes('。') &&
+      !trimmedLine.includes('、') &&
+      !trimmedLine.includes('？') &&
+      !trimmedLine.includes('！') &&
+      !trimmedLine.includes('です') &&
+      !trimmedLine.includes('ます') &&
+      !trimmedLine.includes('ありがとう') &&
+      !trimmedLine.includes('お願い') &&
+      !trimmedLine.includes('すみません') &&
+      !trimmedLine.includes('よろしく') &&
+      !trimmedLine.includes('CLアシスタント') &&
+      !!trimmedLine.match(/^[^\s\d]+(?:\s+[^\s\d]+)*$/) &&
+      !!trimmedLine.match(/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/);
+
+    if (isPotentialSpeaker) {
+      if (nextLine === undefined) return true;
+      const trimmedNextLine = nextLine.trim();
+      if (trimmedNextLine && !isSpeakerLine(nextLine, undefined)) {
+        return true;
+      }
+      if (trimmedNextLine === '') return true;
+    }
     
-    const speakerMatch = line.match(/^([^\s\d]+(?:\s+[^\s\d]+)*)\s+\d{2}:\d{2}:\d{2}/);
-    if (speakerMatch) {
-      currentSpeaker = speakerMatch[1].trim();
+    return false;
+  };
+
+  type ConversationChunk = { speaker: string; lines: string[] };
+  const chunks: ConversationChunk[] = [];
+  let currentChunk: ConversationChunk | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const nextLine = i + 1 < lines.length ? lines[i + 1] : undefined;
+
+    if (isSpeakerLine(line, nextLine)) {
+      const speaker = line.trim().replace(/\s+\d{2}:\d{2}:\d{2}$/, '');
+      currentChunk = { speaker, lines: [line] };
+      chunks.push(currentChunk);
+    } else {
+      if (currentChunk) {
+        currentChunk.lines.push(line);
+      } else {
+        if (chunks.length === 0) {
+          chunks.push({ speaker: 'header', lines: [] });
+        }
+        chunks[0].lines.push(line);
+      }
+    }
+  }
+
+  const originalSpeakers = chunks.map(c => c.speaker).filter(s => s !== 'header');
+  const includedSpeakerSet = new Set<string>();
+  const excludedSpeakerSet = new Set<string>();
+  const filteredLines: string[] = [];
+
+  for (const chunk of chunks) {
+    if (chunk.speaker === 'header') {
+      filteredLines.push(...chunk.lines);
+      continue;
     }
 
-    if (currentSpeaker) {
-      if (excludeSpeakers.length > 0) {
-        const isExcluded = excludeSpeakers.some(excludedSpeaker => 
-          currentSpeaker === excludedSpeaker || 
-          currentSpeaker?.replace(/\s/g, '') === excludedSpeaker.replace(/\s/g, '')
-        );
-        if (isExcluded) {
-          shouldExclude = true;
-          excludedSpeakerSet.add(currentSpeaker);
-        }
-      }
-      
-      if (includeSpeakers.length > 0 && !shouldExclude) {
-        const isIncluded = includeSpeakers.some(includedSpeaker => 
-          currentSpeaker === includedSpeaker || 
-          currentSpeaker?.replace(/\s/g, '') === includedSpeaker.replace(/\s/g, '')
-        );
-        if (!isIncluded) {
-          shouldExclude = true;
-        }
-      }
-    }
-    
-    if (!shouldExclude && excludeKeywords.length > 0) {
-      const hasExcludedKeyword = excludeKeywords.some(keyword => 
-        line.toLowerCase().includes(keyword.toLowerCase())
-      );
-      if (hasExcludedKeyword) {
+    const speaker = chunk.speaker;
+    let shouldExclude = false;
+
+    if (includeSpeakers.length > 0) {
+      if (!includeSpeakers.some(inc => inc.replace(/\s/g, '') === speaker.replace(/\s/g, ''))) {
         shouldExclude = true;
       }
     }
-    
-    if (!shouldExclude) {
-      filteredLines.push(line);
-      includedLines++;
-      if (currentSpeaker) {
-        includedSpeakerSet.add(currentSpeaker);
+
+    if (!shouldExclude && excludeSpeakers.length > 0) {
+      if (excludeSpeakers.some(exc => exc.replace(/\s/g, '') === speaker.replace(/\s/g, ''))) {
+        shouldExclude = true;
       }
+    }
+
+    if (shouldExclude) {
+      excludedSpeakerSet.add(speaker);
     } else {
-      excludedLines++;
+      filteredLines.push(...chunk.lines);
+      includedSpeakerSet.add(speaker);
     }
   }
   
+  const finalData = filteredLines.join('\n');
+  const includedLines = finalData.split('\n').length;
+  const excludedLines = conversationData.split('\n').length - includedLines;
+
+  console.log('=== フィルタリング結果サマリー (チャンクベース) ===');
+  console.log(`元の話者数: ${originalSpeakers.length}`);
+  console.log(`除外された話者数: ${excludedSpeakerSet.size}`);
+  console.log(`残った話者数: ${includedSpeakerSet.size}`);
+  console.log(`除外された行数 (推定): ${excludedLines}`);
+  console.log(`残った行数 (推定): ${includedLines}`);
+  console.log(`除外された話者: ${Array.from(excludedSpeakerSet).join(', ') || 'なし'}`);
+  console.log(`残った話者: ${Array.from(includedSpeakerSet).join(', ')}`);
+  console.log('================================');
+
   return {
-    filteredData: filteredLines.join('\n'),
+    filteredData: finalData,
     originalSpeakers,
     includedSpeakers: Array.from(includedSpeakerSet),
     excludedSpeakers: Array.from(excludedSpeakerSet),
     excludedLines,
-    includedLines
+    includedLines,
   };
 }
 
@@ -337,6 +451,9 @@ export const DEFAULT_EXCLUDE_SPEAKERS = [
   '上馬場仁美',
   '村崎遥',
   '柳田純希',
+  'CLアシスタント',
+  '川合健太郎',
+  '栗林ウブ',
 ];
 
 /**

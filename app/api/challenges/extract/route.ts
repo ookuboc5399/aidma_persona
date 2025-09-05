@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
+import { filterConversationData, extractSpeakers, DEFAULT_EXCLUDE_SPEAKERS, type FilterOptions } from '@/lib/conversation-filter';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -80,7 +81,14 @@ function mergeChallengeAnalyses(analyses: any[]): any {
 
 export async function POST(req: NextRequest) {
   try {
-    const { companyName, conversationData, sourceUrl } = await req.json();
+    const { 
+      companyName, 
+      conversationData, 
+      sourceUrl,
+      excludeSpeakers,
+      includeSpeakers,
+      excludeKeywords
+    } = await req.json();
 
     if (!companyName || !conversationData || !sourceUrl) {
       return NextResponse.json(
@@ -89,21 +97,57 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 会話データのサイズをチェック
-    console.log(`Processing conversation data: ${conversationData.length} characters`);
+    // 会話データの話者情報を分析
+    const originalSpeakers = extractSpeakers(conversationData);
+    console.log(`会話参加者: ${originalSpeakers.join(', ')}`);
+
+    // 話者フィルターを適用（デフォルトフィルターを常に適用）
+    let processedConversationData = conversationData;
+    let filterStats = null;
+    
+    // デフォルトの除外話者リストと追加指定された除外話者を結合
+    const allExcludeSpeakers = [
+      ...DEFAULT_EXCLUDE_SPEAKERS,
+      ...(excludeSpeakers || [])
+    ];
+    
+    const filterOptions: FilterOptions = {
+      excludeSpeakers: allExcludeSpeakers,
+      includeSpeakers,
+      excludeKeywords
+    };
+    
+    const filterResult = filterConversationData(conversationData, filterOptions);
+    processedConversationData = filterResult.filteredData;
+    filterStats = {
+      originalSpeakers: filterResult.originalSpeakers,
+      includedSpeakers: filterResult.includedSpeakers,
+      excludedSpeakers: filterResult.excludedSpeakers,
+      includedLines: filterResult.includedLines,
+      excludedLines: filterResult.excludedLines
+    };
+    
+    console.log(`話者フィルター適用:`);
+    console.log(`- 除外された話者: ${filterResult.excludedSpeakers.join(', ') || 'なし'}`);
+    console.log(`- 残った話者: ${filterResult.includedSpeakers.join(', ')}`);
+    console.log(`- 除外された発言: ${filterResult.excludedLines}件`);
+    console.log(`- 残った発言: ${filterResult.includedLines}件`);
+
+    // フィルタリング後の会話データのサイズをチェック
+    console.log(`Processing filtered conversation data: ${processedConversationData.length} characters`);
     
     // GPT-4oの高いトークン制限を活用（128,000トークン ≈ 96,000文字）
-    const estimatedTokens = conversationData.length * 0.75; // 概算トークン数
-    console.log(`Estimated tokens: ${Math.round(estimatedTokens)}`);
+    const estimatedTokens = processedConversationData.length * 0.75; // 概算トークン数
+    console.log(`Estimated tokens after filtering: ${Math.round(estimatedTokens)}`);
 
     let chunks: string[];
     if (estimatedTokens <= 100000) {
       // 十分小さい場合は分割せずに一度に処理
-      chunks = [conversationData];
-      console.log(`Processing entire conversation in single request (${conversationData.length} chars)`);
+      chunks = [processedConversationData];
+      console.log(`Processing filtered conversation in single request (${processedConversationData.length} chars)`);
     } else {
       // 大きすぎる場合は分割処理
-      chunks = splitTextIntoChunks(conversationData, 50000);
+      chunks = splitTextIntoChunks(processedConversationData, 50000);
       console.log(`Processing ${chunks.length} chunks for ${companyName}`);
     }
 
@@ -274,6 +318,7 @@ ${chunks.length > 1 ? '注意：これは会話データの一部分です。断
       companyName,
       extractedChallenges,
       challengeAnalysis,
+      filterStats,
       processingInfo: {
         totalChunks: chunks.length,
         originalLength: conversationData.length,

@@ -23,16 +23,17 @@ export async function POST(req: NextRequest) {
 はい聞こえてます。今、隣に仕事はおりますが、ちょっと仕事が継続されてますので、参加はできます。はい。わかりましたありがとうございます。
 
 長谷部成紀
-よろしくお願いします。よろしくお願いいたします。はい。そしたら今日活動のところいつから始めていくのかだったりとか何を始めていくのかってお話でぜひ御社側からお伺いできればなと思...`;
+よろしくお願いします。よろしくお願いいたします。はい。そしたら今日活動のところいつから始めていくのかだったりとか何を始めていくのかってお話でぜひ御社側からお伺いできればなと思って会議、`;
 
-    console.log('=== 話者フィルターテスト開始 ===');
+    console.log('=== 改善された話者フィルターテスト開始 ===');
 
     // 1. 話者一覧の抽出
     const speakers = extractSpeakers(testData);
     console.log('話者一覧:', speakers);
 
-    // 2. 長谷部成紀を除外
+    // 2. includeSpeakersに宮岡ホーキングと長谷部成紀を指定し、長谷部成紀を除外
     const filtered = filterConversationData(testData, { 
+      includeSpeakers: ['宮岡ホーキング', '長谷部成紀'],
       excludeSpeakers: ['長谷部成紀'] 
     });
 
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
         filteredData: filtered.filteredData
       },
       test: {
-        description: '長谷部成紀の発言を除外するテスト',
+        description: 'includeSpeakersからexcludeSpeakersを除外するテスト（空白行対応改善版）',
         originalLength: testData.length,
         filteredLength: filtered.filteredData.length,
         reductionPercentage: Math.round((1 - filtered.filteredData.length / testData.length) * 100)
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: unknown) {
-    console.error('Speaker filter test error:', error);
+    console.error('Improved speaker filter test error:', error);
     return NextResponse.json({ 
       error: error instanceof Error ? error.message : 'Unknown error',
       success: false 
