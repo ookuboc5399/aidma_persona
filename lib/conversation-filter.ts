@@ -60,17 +60,17 @@ export function filterConversationData(conversationData: string, options: Filter
   
   let excludedLines = 0;
   let includedLines = 0;
+  let currentSpeaker: string | null = null;
   
   for (const line of lines) {
     let shouldExclude = false;
-    let currentSpeaker: string | null = null;
     
-    // 話者名とタイムスタンプのパターンをマッチ
     const speakerMatch = line.match(/^([^\s\d]+(?:\s+[^\s\d]+)*)\s+\d{2}:\d{2}:\d{2}/);
     if (speakerMatch) {
       currentSpeaker = speakerMatch[1].trim();
-      
-      // 除外対象の話者チェック
+    }
+
+    if (currentSpeaker) {
       if (excludeSpeakers.length > 0) {
         const isExcluded = excludeSpeakers.some(excludedSpeaker => 
           currentSpeaker === excludedSpeaker || 
@@ -82,7 +82,6 @@ export function filterConversationData(conversationData: string, options: Filter
         }
       }
       
-      // 含める対象の話者チェック（指定されている場合）
       if (includeSpeakers.length > 0 && !shouldExclude) {
         const isIncluded = includeSpeakers.some(includedSpeaker => 
           currentSpeaker === includedSpeaker || 
@@ -94,7 +93,6 @@ export function filterConversationData(conversationData: string, options: Filter
       }
     }
     
-    // キーワード除外チェック
     if (!shouldExclude && excludeKeywords.length > 0) {
       const hasExcludedKeyword = excludeKeywords.some(keyword => 
         line.toLowerCase().includes(keyword.toLowerCase())

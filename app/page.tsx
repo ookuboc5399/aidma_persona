@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -105,8 +104,6 @@ function toMessage(err: unknown): string {
   return String(err);
 }
 
-
-
 export default function Home() {
   // 処理1用：取材シート（企業情報保存のみ）
   const [masterUrl] = useState('https://docs.google.com/spreadsheets/d/1pJQqCWrIBTp5JFxByoOOQt82qqQZ5AXz8cQgy1LHzZY/edit?gid=1747100300#gid=1747100300');
@@ -128,6 +125,7 @@ export default function Home() {
   const [isDateLoading, setIsDateLoading] = useState(false);
   const [isCompanyLoading, setIsCompanyLoading] = useState(false);
   const [dateError, setDateError] = useState('');
+  const [selectedCompanyIndex, setSelectedCompanyIndex] = useState<number | null>(null);
 
   // CLシート用の日付選択機能のstate
   const [clAvailableDates, setClAvailableDates] = useState<DateOption[]>([]);
@@ -136,9 +134,8 @@ export default function Home() {
   const [isClDateLoading, setIsClDateLoading] = useState(false);
   const [isClCompanyLoading, setIsClCompanyLoading] = useState(false);
   const [clDateError, setClDateError] = useState('');
+  const [selectedClCompanyIndex, setSelectedClCompanyIndex] = useState<number | null>(null);
 
-
-  
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const challengeResultsRef = useRef<HTMLDivElement | null>(null);
   const dateCompaniesRef = useRef<HTMLDivElement | null>(null);
@@ -576,16 +573,27 @@ export default function Home() {
 
       console.log('指定日付の課題抽出・マッチング処理完了:', result);
       
-      // ChallengeCompany形式に変換
-      const challengeCompanies: ChallengeCompany[] = result.results.map((item: any) => ({
-        companyName: item.companyName,
-        challenges: item.challenges,
-        matches: item.matchingResults.flatMap((mr: any) => mr.matches || []),
-        extractionMethod: item.extractionMethod,
-        error: item.error
-      }));
+      // ChallengeCompany形式に変換（必須項目をすべて埋める）
+      const cc: ChallengeCompany[] = (result.results || []).map((item: any, idx: number) => {
+        const matchesArrays = (item.matchingResults ?? []).map((mr: any) => mr.matches || []);
+        const flatMatches: MatchingResult[] = ([] as MatchingResult[]).concat(...matchesArrays);
+        const totalMatches = matchesArrays.reduce((acc: number, arr: any[]) => acc + arr.length, 0);
 
-      setChallengeCompanies(challengeCompanies);
+        return {
+          rowIndex: item.rowIndex ?? idx + 1,
+          date: clSelectedDate,
+          companyName: item.companyName,
+          originalCompanyName: item.originalCompanyName ?? item.companyName,
+          challenges: item.challenges,
+          matches: flatMatches,
+          totalMatches,
+          sourceUrl: selectedDateData.url,
+          success: !item.error,
+          error: item.error
+        };
+      });
+
+      setChallengeCompanies(cc);
 
       // 結果セクションまでスクロール
       if (challengeResultsRef.current) {
@@ -885,102 +893,54 @@ export default function Home() {
                 </p>
               </div>
             )}
-          </div>
-        </div>
-      </section>
 
-      {/* 日付別企業データ表示 */}
-      {companiesByDate.length > 0 && (
-        <section ref={dateCompaniesRef} className="relative py-10">
-          <div className="absolute inset-0 bg-center bg-cover" style={{ backgroundImage: 'url(/top1.png)' }}></div>
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0b1020] via-[#0b1020]/80 to-[#0b1020]"></div>
-          <div className="relative container mx-auto px-4">
-            <div className="bg-white/95 text-slate-900 rounded-xl shadow-2xl p-6 md:p-8 backdrop-blur-sm">
-              <h2 className="text-4xl font-bold [font-family:var(--font-serif-jp)] text-slate-900 tracking-wide mb-6">
-                {selectedDate}の企業データ ({companiesByDate.length}社)
-              </h2>
-              
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {companiesByDate.map((company, index) => {
-                  const companyKey = `${company.columnIndex}-${company.subIndex || 0}`;
-                  return (
-                  <div key={companyKey} className="bg-white border border-gray-200 rounded-lg shadow-md p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="text-lg font-bold text-gray-900 mb-1">
-                          {company.companyName}
-                        </h3>
-                        <p className="text-sm text-gray-600">
-                          列{String.fromCharCode(65 + company.columnIndex)}
-                          {company.subIndex !== undefined && ` (企業${company.subIndex + 1})`} | 
-                          {company.conversationLines}行 | 
-                          {Math.round(company.conversationLength / 100) / 10}KB
-                        </p>
-                        {company.isExtractedFromConversation && (
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
-                              {company.meetingType}
-                            </span>
-                            <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
-                              信頼度: {Math.round((company.confidence || 0) * 100)}%
-                            </span>
-                            <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded">
-                              AI抽出済み
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        company.isProcessed ? 'bg-green-100 text-green-800' :
-                        company.isProcessing ? 'bg-yellow-100 text-yellow-800' :
-                        company.error ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
-                        {company.isProcessed ? '✓ 完了' :
-                         company.isProcessing ? '処理中' :
-                         company.error ? 'エラー' :
-                         '未処理'}
-                      </div>
+            {companiesByDate.length > 0 && (
+              <div ref={dateCompaniesRef} className="mt-6">
+                <h2 className="text-4xl font-bold [font-family:var(--font-serif-jp)] text-slate-900 tracking-wide mb-6">
+                  {selectedDate}の企業データ ({companiesByDate.length}社)
+                </h2>
+                
+                <div className="space-y-4">
+                  <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">処理対象企業:</label>
+                      <select
+                        value={selectedCompanyIndex ?? ''}
+                        onChange={(e) => setSelectedCompanyIndex(e.target.value ? parseInt(e.target.value) : null)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">企業を選択してください</option>
+                        {companiesByDate.map((company, index) => (
+                          <option key={`${company.columnIndex}-${company.subIndex || index}`} value={index}>
+                            {company.companyName}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-
-                    <div className="mb-4">
-                      <p className="text-sm text-gray-600 mb-2">会話データ（抜粋）:</p>
-                      <div className="bg-gray-50 p-3 rounded border text-xs">
-                        <p className="line-clamp-3">
-                          {company.conversationData.substring(0, 150)}...
-                        </p>
-                      </div>
-                    </div>
-
-                    {company.error && (
-                      <div className="bg-red-50 p-3 rounded border border-red-200 mb-4">
-                        <p className="text-red-700 text-sm">エラー: {company.error}</p>
-                      </div>
-                    )}
-
                     <button
-                      onClick={() => handleProcessSingleCompany(company)}
-                      disabled={company.isProcessing || company.isProcessed}
-                      className={`w-full px-4 py-2 rounded-md text-sm font-medium transition ${
-                        company.isProcessed 
-                          ? 'bg-green-100 text-green-800 cursor-not-allowed'
-                          : company.isProcessing
-                          ? 'bg-yellow-100 text-yellow-800 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700'
-                      }`}
+                      onClick={() => {
+                        if (selectedCompanyIndex !== null) {
+                          handleProcessSingleCompany(companiesByDate[selectedCompanyIndex]);
+                        }
+                      }}
+                      disabled={selectedCompanyIndex === null || companiesByDate[selectedCompanyIndex]?.isProcessing || companiesByDate[selectedCompanyIndex]?.isProcessed}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition"
                     >
-                      {company.isProcessing ? '処理中...' :
-                       company.isProcessed ? '処理完了' :
-                       'データベースに保存'}
+                      {selectedCompanyIndex !== null && companiesByDate[selectedCompanyIndex]?.isProcessing ? '処理中...' : 
+                       selectedCompanyIndex !== null && companiesByDate[selectedCompanyIndex]?.isProcessed ? '処理完了' : 'データベースに保存'}
                     </button>
                   </div>
-                  );
-                })}
+                  {selectedCompanyIndex !== null && companiesByDate[selectedCompanyIndex]?.error && (
+                    <div className="bg-red-50 p-3 rounded border border-red-200 mb-4">
+                      <p className="text-red-700 text-sm">エラー: {companiesByDate[selectedCompanyIndex].error}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          </div>
-        </section>
-      )}
+            )}
+          </div>{/* .bg-white/95 card */}
+        </div>{/* .container */}
+      </section>{/* 新しい日付選択セクション */}
 
       {/* Company Data Display */}
       {companyData.length > 0 && (
@@ -1271,66 +1231,55 @@ export default function Home() {
               </div>
             </div>
 
-
-
             {/* CLシート企業データ表示 */}
             {clCompaniesByDate.length > 0 && (
               <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 mb-6">
                 <h3 className="text-xl font-semibold text-slate-800 mb-4">
                   {clSelectedDate} の課題抽出対象企業（{clCompaniesByDate.length}社）
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {clCompaniesByDate.map((company, index) => (
-                    <div key={`${company.columnIndex}-${company.subIndex || index}`} className="bg-white p-4 rounded-lg border border-gray-300 shadow-sm">
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-semibold text-gray-900 text-sm">{company.companyName}</h4>
-                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">{company.columnLetter}列</span>
-                      </div>
-                      {company.meetingType && (
-                        <p className="text-xs text-gray-600 mb-1">種別: {company.meetingType}</p>
-                      )}
-                      {company.confidence && (
-                        <p className="text-xs text-gray-600 mb-1">信頼度: {Math.round(company.confidence * 100)}%</p>
-                      )}
-                      <p className="text-xs text-gray-500 mb-3">
-                        抽出方法: {company.extractionMethod === 'ai_extraction' ? 'AI抽出' : 'ヘッダー'}
-                      </p>
-                      
-                      {/* 課題抽出・マッチング結果表示 */}
-                      {company.challengeResult && (
-                        <div className="bg-green-50 p-3 rounded-lg border border-green-200 mb-3">
-                          <p className="text-xs font-semibold text-green-800 mb-1">処理完了</p>
-                          <p className="text-xs text-green-700">
-                            課題: {company.challengeResult.totalChallenges}件 | 
-                            解決策: {company.challengeResult.selectedCompaniesCount || company.challengeResult.totalMatches || 0}件
-                          </p>
-                        </div>
-                      )}
-                      
-                      {company.challengeError && (
-                        <div className="bg-red-50 p-2 rounded-lg border border-red-200 mb-3">
-                          <p className="text-xs text-red-700">エラー: {company.challengeError}</p>
-                        </div>
-                      )}
-                      
-                      {/* 課題抽出・マッチングボタン */}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleProcessSingleClCompany(company)}
-                          disabled={company.isChallengeProcessing}
-                          className={`flex-1 px-3 py-2 text-xs rounded-md transition ${
-                            company.isChallengeProcessed
-                              ? 'bg-green-600 text-white hover:bg-green-700'
-                              : 'bg-purple-600 text-white hover:bg-purple-700'
-                          } disabled:bg-gray-400`}
-                        >
-                          {company.isChallengeProcessing ? '処理中...' :
-                           company.isChallengeProcessed ? '再処理' :
-                           '課題抽出・マッチング'}
-                        </button>
-                      </div>
+                <div className="space-y-4">
+                  <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">処理対象企業:</label>
+                      <select
+                        value={selectedClCompanyIndex ?? ''}
+                        onChange={(e) => setSelectedClCompanyIndex(e.target.value ? parseInt(e.target.value) : null)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">企業を選択してください</option>
+                        {clCompaniesByDate.map((company, index) => (
+                          <option key={`${company.columnIndex}-${company.subIndex || index}`} value={index}>
+                            {company.companyName}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                  ))}
+                    <button
+                      onClick={() => {
+                        if (selectedClCompanyIndex !== null) {
+                          handleProcessSingleClCompany(clCompaniesByDate[selectedClCompanyIndex]);
+                        }
+                      }}
+                      disabled={selectedClCompanyIndex === null || clCompaniesByDate[selectedClCompanyIndex]?.isChallengeProcessing}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 transition"
+                    >
+                      {selectedClCompanyIndex !== null && clCompaniesByDate[selectedClCompanyIndex]?.isChallengeProcessing ? '処理中...' : '課題抽出・マッチング'}
+                    </button>
+                  </div>
+                  {selectedClCompanyIndex !== null && clCompaniesByDate[selectedClCompanyIndex]?.challengeResult && (
+                    <div className="bg-green-50 p-3 rounded-lg border border-green-200 mb-3">
+                      <p className="text-xs font-semibold text-green-800 mb-1">処理完了</p>
+                      <p className="text-xs text-green-700">
+                        課題: {clCompaniesByDate[selectedClCompanyIndex].challengeResult.totalChallenges}件 | 
+                        解決策: {clCompaniesByDate[selectedClCompanyIndex].challengeResult.selectedCompaniesCount || clCompaniesByDate[selectedClCompanyIndex].challengeResult.totalMatches || 0}件
+                      </p>
+                    </div>
+                  )}
+                  {selectedClCompanyIndex !== null && clCompaniesByDate[selectedClCompanyIndex]?.challengeError && (
+                    <div className="bg-red-50 p-2 rounded-lg border border-red-200 mb-3">
+                      <p className="text-xs text-red-700">エラー: {clCompaniesByDate[selectedClCompanyIndex].challengeError}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1375,17 +1324,17 @@ export default function Home() {
                           <h3 className="text-2xl font-bold text-slate-800">{company.companyName}</h3>
                           <p className="text-sm text-gray-600">
                             {company.columnLetter}列 | {company.extractionMethod === 'ai_extraction' ? 'AI抽出' : 'ヘッダー'} | 
-                            処理時刻: {new Date(company.challengeResult.processedAt).toLocaleString()}
+                            処理時刻: {company.challengeResult?.processedAt ? new Date(company.challengeResult.processedAt).toLocaleString() : '-'}
                           </p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-semibold text-gray-700">
-                            課題: {company.challengeResult.totalChallenges}件
+                            課題: {company.challengeResult?.totalChallenges ?? 0}件
                           </p>
                           <p className="text-sm font-semibold text-gray-700">
-                            解決策: {company.challengeResult.selectedCompaniesCount || company.challengeResult.totalMatches || 0}件
+                            解決策: {company.challengeResult?.selectedCompaniesCount || company.challengeResult?.totalMatches || 0}件
                           </p>
-                          {company.challengeResult.filterStats && (
+                          {company.challengeResult?.filterStats && (
                             <p className="text-xs text-gray-600 mt-1">
                               除外話者: {company.challengeResult.filterStats.excludedSpeakers?.length || 0}名
                             </p>
@@ -1393,19 +1342,17 @@ export default function Home() {
                         </div>
                       </div>
 
-
-
                       {/* マッチング結果 */}
                       <div>
                         <h4 className="text-lg font-semibold text-slate-700 mb-2">
-                          総合マッチング結果 ({company.challengeResult.selectedCompaniesCount || 0}社の解決企業)
+                          総合マッチング結果 ({company.challengeResult?.selectedCompaniesCount || 0}社の解決企業)
                         </h4>
                         <div className="space-y-3">
                           {/* 全課題の表示 */}
                           <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 mb-4">
                             <h5 className="font-semibold text-blue-800 mb-2">抽出された課題:</h5>
                             <div className="space-y-1">
-                              {company.challengeResult.challenges?.map((challenge: string, idx: number) => (
+                              {company.challengeResult?.challenges?.map((challenge: string, idx: number) => (
                                 <div key={idx} className="text-sm text-blue-700">
                                   {idx + 1}. {challenge}
                                 </div>
@@ -1414,7 +1361,7 @@ export default function Home() {
                           </div>
 
                           {/* 総合マッチング企業の表示 */}
-                          {company.challengeResult.comprehensiveMatches && company.challengeResult.comprehensiveMatches.length > 0 ? (
+                          {company.challengeResult?.comprehensiveMatches && company.challengeResult.comprehensiveMatches.length > 0 ? (
                             company.challengeResult.comprehensiveMatches.map((match: any, matchIdx: number) => (
                               <div key={matchIdx} className="bg-green-50 p-4 rounded-lg border border-green-200">
                                 <div className="flex justify-between items-start mb-2">
@@ -1472,8 +1419,6 @@ export default function Home() {
                               </p>
                             </div>
                           )}
-
-
                         </div>
                       </div>
                     </div>
@@ -1598,4 +1543,3 @@ export default function Home() {
     </main>
   );
 }
-

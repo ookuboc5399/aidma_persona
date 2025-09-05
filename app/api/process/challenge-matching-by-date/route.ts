@@ -55,11 +55,32 @@ async function extractChallengesFromConversation(conversationData: string, compa
           messages: [
             {
               role: 'system',
-              content: `あなたは企業の課題抽出の専門家です。会話データから${companyName}が抱えている課題や問題点を抽出してください。`
+              content: `あなたは企業の事業課題を抽出する専門家です。会話データから${companyName}が抱えている事業課題を抽出・分析し、企業の成長と改善に繋がる具体的な問題点を明確にしてください。`
             },
             {
               role: 'user',
-              content: `以下の会話データから「${companyName}」が抱えている課題や問題点を箇条書きで抽出してください。技術的課題、ビジネス課題、人材課題など幅広く抽出してください。\n\n${conversationData}`
+              content: `以下の会話データから「${companyName}」が抱えている事業課題を箇条書きで5〜10個抽出してください。
+
+事業課題とは、企業の売上、利益、成長に直接的な影響を与える問題や機会を指します。
+例えば、新規顧客獲得の困難、市場シェアの低下、製品開発の遅れ、競合の台頭などが含まれます。
+
+以下の点は事業課題から除外してください:
+- 個々の顧客とのやり取りや特定の契約に関する問題
+- 社内の日常的な業務連絡や手続きの遅延
+- 担当者レベルのコミュニケーションや引継ぎの問題
+
+良い抽出例:
+- 新規事業のアイデアが不足しており、新たな収益源の確保ができていない。
+- 主力製品の市場競争力が低下し、売上が伸び悩んでいる。
+- 若手エンジニアの採用が難航し、開発チームの増強が計画通りに進んでいない。
+
+悪い抽出例:
+- 担当者が頻繁に休職し、引き継ぎが不十分。
+- 顧客へのサービス内容の説明が不足している。
+- 契約期間の管理が徹底されていない。
+
+会話データ:
+${conversationData}`
             }
           ]
         };
@@ -85,8 +106,8 @@ async function extractChallengesFromConversation(conversationData: string, compa
     // 箇条書きから配列に変換
     const challenges = challengesText
       .split('\n')
-      .filter((line: string) => line.trim().startsWith('-') || line.trim().startsWith('•') || line.trim().startsWith('*'))
-      .map((line: string) => line.replace(/^[-•*]\s*/, '').trim())
+      .filter((line: string) => line.trim().startsWith('-') || line.trim().startsWith('•') || line.trim().startsWith('*') || /^\d+\./.test(line.trim()))
+      .map((line: string) => line.replace(/^[-•*]\s*/, '').replace(/^\d+\.\s*/, '').trim())
       .filter((challenge: string) => challenge.length > 0);
 
     return challenges;
