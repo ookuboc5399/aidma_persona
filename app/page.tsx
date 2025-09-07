@@ -1349,13 +1349,17 @@ export default function Home() {
                     >
                       {isClCompanyLoading ? '読み込み中...' : '企業データを確認'}
                     </button>
-                    
+                  </div>
+                )}
+
+                {clSelectedDate && (
+                  <div className="mt-4">
                     <button 
                       onClick={handleProcessClByDate}
-                      disabled={!clSelectedDate || isChallengeLoading}
+                      disabled={isChallengeLoading}
                       className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 transition"
                     >
-                      {isChallengeLoading ? '処理中...' : `${selectedSheetType}シート課題抽出・マッチング実行`}
+                      {isChallengeLoading ? '処理中...' : `${clSelectedDate}${selectedSheetType}シート課題抽出・マッチング実行`}
                     </button>
                   </div>
                 )}
@@ -1421,21 +1425,7 @@ export default function Home() {
               </div>
             )}
             
-            <div className="flex justify-center mb-6">
-              <button 
-                onClick={handleChallengeMatching} 
-                disabled={isChallengeLoading}
-                className="px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 transition text-lg"
-              >
-                {isChallengeLoading ? '処理中...' : '全体課題抽出・マッチング実行'}
-              </button>
-            </div>
 
-            {challengeError && (
-              <div className="bg-red-50 p-4 rounded-lg border border-red-200 mb-6">
-                <p className="text-red-700">エラー: {challengeError}</p>
-              </div>
-            )}
           </div>
         </div>
       </section>
