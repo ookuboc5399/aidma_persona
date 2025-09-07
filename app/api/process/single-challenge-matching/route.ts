@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { filterConversationData, extractSpeakers, FilterOptions, DEFAULT_EXCLUDE_SPEAKERS } from '../../../../lib/conversation-filter';
+import { comprehensiveMatchChallenges } from '../../snowflake/comprehensive-match/route';
 
 // OpenAI クライアントは関数内で動的に作成
 
@@ -189,8 +190,6 @@ async function findMatchingCompanies(challenges: string[]): Promise<any[]> {
       console.log(`課題${index + 1}: ${challenge}`);
     });
 
-    // Vercel環境対応: 直接関数を呼び出し（APIコール回避）
-    const { comprehensiveMatchChallenges } = await import('../../snowflake/comprehensive-match/route');
     console.log('🔄 直接関数呼び出しでマッチング処理実行');
     
     const result = await comprehensiveMatchChallenges(challenges);

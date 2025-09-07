@@ -61,6 +61,7 @@ interface ChallengeCompany {
   sourceUrl: string;
   success: boolean;
   sheetName?: string; // シート名を追加
+  filterStats?: any;
   error?: string;
 }
 
@@ -587,7 +588,7 @@ export default function Home() {
     }
   };
 
-  // CLシート用：指定日付の課題抽出・マッチング処理
+  // CLシート用：指定日付の課題抽出・マッチング処理（全企業並行処理）
   const handleProcessClByDate = async () => {
     if (!clSelectedDate) {
       setChallengeError('日付を選択してください');
@@ -607,43 +608,104 @@ export default function Home() {
     try {
       console.log(`指定日付の課題抽出・マッチング処理開始: ${clSelectedDate}`);
       
-      const res = await fetch('/api/process/challenge-matching-by-date', {
+      // まず企業データを取得
+      const apiEndpoint = selectedSheetType === 'CL' ? '/api/sheets/get-cl-companies-by-date' :
+                         selectedSheetType === 'CU' ? '/api/sheets/get-cu-companies-by-date' :
+                         '/api/sheets/get-cp-companies-by-date';
+      
+      const companiesRes = await fetch(apiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           date: clSelectedDate,
-          url: selectedDateData.url,
-          sheetType: selectedSheetType
+          url: selectedDateData.url
         }),
       });
 
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed to process challenges');
+      const companiesResult = await companiesRes.json();
+      if (!companiesRes.ok) throw new Error(companiesResult.error || 'Failed to load companies');
 
-      console.log('指定日付の課題抽出・マッチング処理完了:', result);
-      
-      // ChallengeCompany形式に変換（必須項目をすべて埋める）
-      const cc: ChallengeCompany[] = (result.results || []).map((item: any, idx: number) => {
-        const matchesArrays = (item.matchingResults ?? []).map((mr: any) => mr.matches || []);
-        const flatMatches: MatchingResult[] = ([] as MatchingResult[]).concat(...matchesArrays);
-        const totalMatches = matchesArrays.reduce((acc: number, arr: any[]) => acc + arr.length, 0);
+      const companies = companiesResult.companies || [];
+      console.log(`取得した企業数: ${companies.length}社`);
+
+      // テスト用：最初の2社のみ処理
+      const testCompanies = companies.slice(0, 2);
+      console.log(`テスト用：${testCompanies.length}社を並行処理します`);
+
+      // 各企業を並行処理
+      const processPromises = testCompanies.map(async (company: any, index: number) => {
+        try {
+          console.log(`企業${index + 1}の処理開始: ${company.companyName}`);
+          
+          const res = await fetch('/api/process/single-challenge-matching', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyName: company.companyName,
+              conversationData: company.conversationData,
+              columnLetter: company.columnLetter,
+              extractionMethod: company.extractionMethod,
+              sheetType: selectedSheetType
+            }),
+          });
+
+          const result = await res.json();
+          if (!res.ok) throw new Error(result.error || 'Failed to process company');
+
+          console.log(`企業${index + 1}の処理完了: ${company.companyName}`);
+          return result;
+        } catch (error) {
+          console.error(`企業${index + 1}の処理エラー: ${company.companyName}`, error);
+          return {
+            error: error instanceof Error ? error.message : String(error),
+            companyName: company.companyName
+          };
+        }
+      });
+
+      // 全企業の処理を待機
+      const results = await Promise.all(processPromises);
+      console.log('全企業の並行処理完了:', results);
+
+      // ChallengeCompany形式に変換
+      const cc: ChallengeCompany[] = results.map((result: any, idx: number) => {
+        if (result.error) {
+          return {
+            rowIndex: idx + 1,
+            date: clSelectedDate,
+            companyName: result.companyName,
+            originalCompanyName: result.companyName,
+            challenges: { challenges: [], summary: '' },
+            matches: [],
+            totalMatches: 0,
+            sourceUrl: selectedDateData.url,
+            sheetName: selectedSheetType,
+            success: false,
+            error: result.error
+          };
+        }
+
+        const flatMatches: MatchingResult[] = result.comprehensiveMatches || [];
+        const totalMatches = flatMatches.length;
 
         return {
-          rowIndex: item.rowIndex ?? idx + 1,
+          rowIndex: idx + 1,
           date: clSelectedDate,
-          companyName: item.companyName,
-          originalCompanyName: item.originalCompanyName ?? item.companyName,
-          challenges: item.challenges,
+          companyName: result.companyName,
+          originalCompanyName: result.originalCompanyName ?? result.companyName,
+          challenges: result.challenges,
           matches: flatMatches,
           totalMatches,
           sourceUrl: selectedDateData.url,
-          sheetName: result.sheetType || selectedSheetType, // シートタイプをシート名として使用
-          success: !item.error,
-          error: item.error
+          sheetName: selectedSheetType,
+          success: !result.error,
+          error: result.error,
+          filterStats: result.filterStats
         };
       });
 
       setChallengeCompanies(cc);
+      console.log(`✅ 課題抽出・マッチング完了: ${cc.length}社処理（テスト用）`);
 
       // 結果セクションまでスクロール
       if (challengeResultsRef.current) {
@@ -847,24 +909,27 @@ export default function Home() {
       
       // 結果をスプレッドシート用の形式に変換
       const results = challengeCompanies.flatMap(company => {
-        if (!company.challenges?.challenges || company.challenges.challenges.length === 0) {
+        const excludedSpeakers = company.filterStats?.excludedSpeakers?.join(', ') || '';
+        const topMatch = company.matches?.[0];
+
+        if (!company.challenges || company.challenges.length === 0) {
           return [{
-            sheetName: company.sheetName || company.date, // シート名または日付を使用
+            sheetName: company.sheetName || company.date,
             companyName: company.companyName,
             challenge: '課題が抽出されませんでした',
-            excludedSpeakers: '',
-            matchingCompany: '',
-            solution: ''
+            excludedSpeakers,
+            matchingCompany: topMatch?.company_name || '',
+            solution: topMatch?.business_description || ''
           }];
         }
 
-        return company.challenges.challenges.map((challenge: any) => ({
-          sheetName: company.sheetName || company.date, // シート名または日付を使用
+        return company.challenges.map((challenge: string) => ({
+          sheetName: company.sheetName || company.date,
           companyName: company.companyName,
-          challenge: `${challenge.category}: ${challenge.title} - ${challenge.description}`,
-          excludedSpeakers: '', // 必要に応じて実装
-          matchingCompany: company.matches?.[0]?.company_name || '',
-          solution: company.matches?.[0]?.solution_details || ''
+          challenge: challenge,
+          excludedSpeakers,
+          matchingCompany: topMatch?.company_name || '',
+          solution: topMatch?.business_description || ''
         }));
       });
 
@@ -882,6 +947,68 @@ export default function Home() {
 
       console.log('スプレッドシートへの結果書き込み完了:', result);
       alert(`${result.updatedRows}行の結果をスプレッドシートに書き込みました`);
+
+    } catch (err: unknown) {
+      const errorMessage = toMessage(err);
+      setWriteSheetError(errorMessage);
+      console.error('スプレッドシート書き込みエラー:', err);
+    } finally {
+      setIsWritingToSheet(false);
+    }
+  };
+
+  const handleWriteSingleResultToSheet = async (company: CompanyByDate) => {
+    if (!company.challengeResult) {
+      setWriteSheetError('書き込む結果がありません');
+      return;
+    }
+
+    setIsWritingToSheet(true);
+    setWriteSheetError('');
+
+    try {
+      console.log('単体企業のスプレッドシートへの結果書き込み開始');
+      
+      const result = company.challengeResult;
+      const excludedSpeakers = result.filterStats?.excludedSpeakers?.join(', ') || '';
+      const topMatch = result.comprehensiveMatches?.[0];
+
+      let dataToWrite;
+
+      if (!result.challenges || result.challenges.length === 0) {
+        dataToWrite = [{
+          sheetName: company.sheetName || company.date,
+          companyName: company.companyName,
+          challenge: '課題が抽出されませんでした',
+          excludedSpeakers,
+          matchingCompany: topMatch?.company_name || '',
+          solution: topMatch?.business_description || ''
+        }];
+      } else {
+        dataToWrite = result.challenges.map((challenge: string) => ({
+          sheetName: company.sheetName || company.date,
+          companyName: company.companyName,
+          challenge: challenge,
+          excludedSpeakers,
+          matchingCompany: topMatch?.company_name || '',
+          solution: topMatch?.business_description || ''
+        }));
+      }
+
+      const res = await fetch('/api/sheets/write-results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: 'https://docs.google.com/spreadsheets/d/1jiead_e52qCXW2zU0ohqJwLqdbb2OyhpAg1urVJEVCY/edit?usp=sharing',
+          results: dataToWrite
+        }),
+      });
+
+      const apiResult = await res.json();
+      if (!res.ok) throw new Error(apiResult.error || 'Failed to write results to spreadsheet');
+
+      console.log('スプレッドシートへの結果書き込み完了:', apiResult);
+      alert(`${apiResult.updatedRows}行の結果をスプレッドシートに書き込みました`);
 
     } catch (err: unknown) {
       const errorMessage = toMessage(err);
@@ -1466,6 +1593,13 @@ export default function Home() {
                               除外話者: {company.challengeResult.filterStats.excludedSpeakers?.length || 0}名
                             </p>
                           )}
+                          <button
+                            onClick={() => handleWriteSingleResultToSheet(company)}
+                            disabled={isWritingToSheet}
+                            className="mt-2 px-3 py-1 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 disabled:bg-gray-400 transition"
+                          >
+                            {isWritingToSheet ? '書き込み中...' : 'シートに書き込み'}
+                          </button>
                         </div>
                       </div>
 
@@ -1656,7 +1790,7 @@ export default function Home() {
                                     <div className="flex justify-between items-start mb-2">
                                       <h5 className="font-semibold text-green-800">{match.company_name}</h5>
                                       <span className="px-2 py-1 bg-green-100 text-green-700 text-sm rounded">
-                                        {Math.round(match.match_score * 100)}%
+                                        (match.total_score || 0)%
                                       </span>
                                     </div>
                                     <p className="text-sm text-gray-600 mb-2">{match.industry} | {match.region}</p>

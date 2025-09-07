@@ -73,27 +73,25 @@ export async function POST(req: NextRequest) {
       result.solution || '' // G列: 解決できるソリューションの内容
     ]);
 
-    // ヘッダー行を追加
-    const headerRow = [
-      'シート名', // A列
-      '企業名', // B列
-      '抽出された課題', // C列
-      '除外された話者', // D列
-      'マッチング企業', // E列
-      '', // F列
-      '解決できるソリューション' // G列
-    ];
-
-    // 既存のデータをクリアしてから新しいデータを書き込み
-    const allRows = [headerRow, ...rows];
-    
+    // ヘッダー行は別途手動で用意されていることを前提とし、データ行のみを追記する
     const response = await retryWithBackoff(async () => {
-      return await sheets.spreadsheets.values.update({
+      // シート名を取得するためにスプレッドシートのメタデータを取得
+      const sheetInfo = await sheets.spreadsheets.get({
         spreadsheetId: sheetId,
-        range: 'A:G',
+      });
+      const firstSheetName = sheetInfo.data.sheets?.[0]?.properties?.title;
+
+      if (!firstSheetName) {
+        throw new Error('No sheet found in the spreadsheet.');
+      }
+
+      return await sheets.spreadsheets.values.append({
+        spreadsheetId: sheetId,
+        range: firstSheetName, // 最初のシートに追記
         valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
         requestBody: {
-          values: allRows
+          values: rows
         }
       });
     });
