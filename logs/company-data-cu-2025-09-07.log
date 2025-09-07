@@ -786,3 +786,388 @@
   "targetSheetName": "シート1"
 }
 ---
+[2025-09-07T22:17:23.190Z] [CUシート 企業データ] 企業データ取得開始
+{
+  "date": "2025/07/18",
+  "sheetId": "1Jzlnu-MNN5eVQmyogCS6OJsj1WEERDnGxTf9oiK1b-8",
+  "url": "https://docs.google.com/spreadsheets/d/1Jzlnu-MNN5eVQmyogCS6OJsj1WEERDnGxTf9oiK1b-8/edit",
+  "targetSheet": "シート1"
+}
+---
+[2025-09-07T22:17:25.287Z] [CUシート 企業データ] 対象スプレッドシートのデータ取得
+{
+  "totalRows": 85,
+  "maxColumns": 4
+}
+---
+[2025-09-07T22:17:25.288Z] [CUシート 企業データ] 列Aのデータ処理
+{
+  "columnHeader": "社名",
+  "dataLength": 935,
+  "first100Chars": "松川税理士事務所\nコンサルティングR株式会社\n株式会社ALWAYS\n株式会社真工社\nユニオン化成株式会社\n有限会社たたみ総合サービス\n株式会社モリシタ・アット・リフォーム\nあたらしや株式会社\n株式会社",
+  "hasValidData": true
+}
+---
+[2025-09-07T22:17:25.289Z] [CUシート 企業データ] 列Aの企業抽出結果
+{
+  "extractedCount": 0,
+  "companies": []
+}
+---
+[2025-09-07T22:17:25.289Z] [CUシート 企業データ] 列Bのデータ処理
+{
+  "columnHeader": "ユニット名",
+  "dataLength": 271,
+  "first100Chars": "＜CU-PM＞AG\nCM\nCM\nCU：株式会社真工社｜M\nBO\nAG\nCM\nCM\nCM\nCM\nCM\n＜CU-PM＞\nSU\nCM\nCM\nCM\nAG\nSP\nSU\nCM\nSU\nCM\nSP\nCM\nCM\nCM\n",
+  "hasValidData": true
+}
+---
+[2025-09-07T22:17:25.289Z] [CUシート 企業データ] 列Bの企業抽出結果
+{
+  "extractedCount": 0,
+  "companies": []
+}
+---
+[2025-09-07T22:17:25.290Z] [CUシート 企業データ] 列Cのデータ処理
+{
+  "columnHeader": "担当名",
+  "dataLength": 378,
+  "first100Chars": "他部署\n米川諒\n木間ひかる\n熊懐龍\n中本新\n高山裕基\n土門和広\n米川諒\n宇野裕紀\n久保将輝\n宇野裕紀\n久保将輝\n宇野裕紀\n高山裕基\n久保将輝\n岩橋恒平\n吉田りな\n熊懐龍\n岩橋恒平\n瀬間さゆり\n田中舜也",
+  "hasValidData": true
+}
+---
+[2025-09-07T22:17:25.290Z] [CUシート 企業データ] 列Cの企業抽出結果
+{
+  "extractedCount": 0,
+  "companies": []
+}
+---
+[2025-09-07T22:17:25.299Z] [CUシート 企業データ] 列Dのデータ処理
+{
+  "columnHeader": "会話データ",
+  "dataLength": 1312652,
+  "first100Chars": "会議概要:\n\n会議タイトル: 【非定例】＜CU-PM＞AG：松川税理士事務所｜\n会議日時: 2025/07/18（金）11:00 - 12:00\n参加者: CUアシスタント, 久保将輝, 遠藤くるみ,",
+  "hasValidData": true
+}
+---
+[2025-09-07T22:17:25.307Z] [CUシート 企業データ] 列Dの企業抽出結果
+{
+  "extractedCount": 77,
+  "companies": [
+    {
+      "name": "松川税理士事務所",
+      "confidence": 0.9
+    },
+    {
+      "name": "コンサルティングR株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社ALWAYS",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社真工社",
+      "confidence": 0.9
+    },
+    {
+      "name": "ユニオン化成株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "有限会社たたみ総合サービス",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社モリシタ・アット・リフォーム",
+      "confidence": 0.9
+    },
+    {
+      "name": "あたらしや株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社オタツー",
+      "confidence": 0.9
+    },
+    {
+      "name": "阪神特殊自動車株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社三福ホールディングス",
+      "confidence": 0.9
+    },
+    {
+      "name": "つくば紫峰法律事務所",
+      "confidence": 0.9
+    },
+    {
+      "name": "巽紙工株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "RED株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "三階屋株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社石森木工",
+      "confidence": 0.9
+    },
+    {
+      "name": "スカイセッター株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社ライフハーツ",
+      "confidence": 0.9
+    },
+    {
+      "name": "しみずファーム",
+      "confidence": 0.9
+    },
+    {
+      "name": "ファミリア株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "Masa’s WEB&デザイン",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社韮崎ツール",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社シナジー＆リサイクルソリューションズ",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社すがコーポレーション",
+      "confidence": 0.9
+    },
+    {
+      "name": "KYOUDAI LANKA株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "弁護士法人フォーカスクライド",
+      "confidence": 0.9
+    },
+    {
+      "name": "藤渡社会保険労務士事務所",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社ビッグドロー",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社三和デンタル",
+      "confidence": 0.9
+    },
+    {
+      "name": "フィンテリックス総合会計事務所",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社クレイプラス",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社CREATE",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社トミクル",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社セイビ堂",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社EdVenture",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社",
+      "confidence": 0.8
+    },
+    {
+      "name": "株式会社千代田エネルギー",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社堀内組",
+      "confidence": 0.9
+    },
+    {
+      "name": "I.S.C.Lab.株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "田村祐樹",
+      "confidence": 0.9
+    },
+    {
+      "name": "司法書士法人青沼総合事務所",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社ベストホームサービス",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社タナケン",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社曙印刷",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社Fan",
+      "confidence": 0.9
+    },
+    {
+      "name": "参鋼株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社長城企画",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社アンサー俱楽部",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社不動産管理システム",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社公募ガイド社",
+      "confidence": 0.9
+    },
+    {
+      "name": "大都保全工業株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社山市成工",
+      "confidence": 0.9
+    },
+    {
+      "name": "Dr PumP",
+      "confidence": 0.9
+    },
+    {
+      "name": "丸善印刷株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "ライクス株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社X-LABO",
+      "confidence": 0.9
+    },
+    {
+      "name": "MYCL Japan株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "合同会社M.E.S",
+      "confidence": 0.9
+    },
+    {
+      "name": "パブリッシングイースター株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社いンテグル",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社トムプランニング",
+      "confidence": 0.9
+    },
+    {
+      "name": "セイダイリフォームクリエイト株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社ジョーシスクリエイト",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社タキオンワタナベ",
+      "confidence": 0.9
+    },
+    {
+      "name": "アイ・ソフトブレーン合同会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "【非定例】アンビシャス税理士法人 様 天海さんから｜",
+      "confidence": 0.1
+    },
+    {
+      "name": "株式会社夢現",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社アート・宙",
+      "confidence": 0.9
+    },
+    {
+      "name": "有限会社エンゼルサービス",
+      "confidence": 0.9
+    },
+    {
+      "name": "有限会社リトルグリーブ",
+      "confidence": 0.9
+    },
+    {
+      "name": "デジタルピュアリサイクル株式会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "税理士法人オーケーパートナー",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社サンエキ",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社迅翔興業",
+      "confidence": 0.9
+    },
+    {
+      "name": "ファランクス合同会社",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社 CLOWN AND SONS",
+      "confidence": 0.9
+    },
+    {
+      "name": "株式会社ユナイト",
+      "confidence": 0.9
+    }
+  ]
+}
+---
+[2025-09-07T22:17:25.994Z] [CUシート 企業データ] 企業データ取得完了
+{
+  "totalCompanies": 77,
+  "targetSheetName": "シート1"
+}
+---

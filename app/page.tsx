@@ -1029,32 +1029,8 @@ export default function Home() {
           <p className="text-white/70 text-sm tracking-widest">AI-powered business matching solution</p>
           <h1 className="text-3xl md:text-5xl font-bold [font-family:var(--font-serif-jp)]">企業課題解決<br className="md:hidden"/>マッチングシステム</h1>
           <p className="text-white/90 text-sm md:text-base mb-4">
-            処理1：取材シートからの企業情報保存 | 処理2：CLシートからの課題抽出・マッチング
+            処理1：取材シートからの企業情報保存 | 処理2：CL,CU,CPシートからの課題抽出・マッチング
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
-            <button type="button" onClick={handleReadSheet} disabled={isLoading} className="px-6 py-3 bg-blue-600 text-white rounded-md text-lg disabled:bg-gray-600 cursor-pointer hover:bg-blue-500 transition">
-              {isLoading ? '取材シート読込中...' : '取材シートから読み込み'}
-            </button>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                placeholder="行番号"
-                min="1"
-                value={selectedRowIndex || ''}
-                onChange={(e) => setSelectedRowIndex(e.target.value ? parseInt(e.target.value) : null)}
-                className="px-3 py-2 border border-gray-300 rounded-md text-center w-20"
-                disabled={isLoading}
-              />
-              <button 
-                type="button" 
-                onClick={() => selectedRowIndex && handleReadSpecificRow(selectedRowIndex)} 
-                disabled={isLoading || !selectedRowIndex}
-                className="px-4 py-3 bg-green-600 text-white rounded-md text-lg disabled:bg-gray-600 cursor-pointer hover:bg-green-500 transition"
-              >
-                {isLoading ? '読込中...' : '特定行読み込み'}
-              </button>
-            </div>
-          </div>
           {globalError && (
             <p className="text-red-300 bg-red-900/30 border border-red-800 inline-block px-3 py-2 rounded-md">Error: {globalError}</p>
           )}
