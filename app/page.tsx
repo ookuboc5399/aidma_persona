@@ -60,6 +60,7 @@ interface ChallengeCompany {
   totalMatches: number;
   sourceUrl: string;
   success: boolean;
+  sheetName?: string; // シート名を追加
   error?: string;
 }
 
@@ -84,6 +85,7 @@ interface CompanyByDate {
   conversationLines: number;
   sourceUrl: string;
   date: string;
+  sheetName?: string; // シート名を追加
   isExtractedFromConversation?: boolean;
   extractionMethod?: string;
   isProcessing?: boolean;
@@ -109,6 +111,34 @@ export default function Home() {
   const [masterUrl] = useState('https://docs.google.com/spreadsheets/d/1pJQqCWrIBTp5JFxByoOOQt82qqQZ5AXz8cQgy1LHzZY/edit?gid=1747100300#gid=1747100300');
   // 処理2用：CLシート（課題抽出・マッチング）
   const [challengeSheetUrl] = useState('https://docs.google.com/spreadsheets/d/1pJQqCWrIBTp5JFxByoOOQt82qqQZ5AXz8cQgy1LHzZY/edit?gid=0#gid=0');
+  
+  // シートタイプに応じたURLを取得する関数
+  const getSheetUrlByType = (sheetType: 'CL' | 'CU' | 'CP'): string => {
+    const baseUrl = 'https://docs.google.com/spreadsheets/d/1pJQqCWrIBTp5JFxByoOOQt82qqQZ5AXz8cQgy1LHzZY/edit?pli=1';
+    let url: string;
+    let gid: string;
+    
+    switch (sheetType) {
+      case 'CL':
+        gid = '0';
+        url = `${baseUrl}&gid=${gid}#gid=${gid}`;
+        break;
+      case 'CU':
+        gid = '609102789';
+        url = `${baseUrl}&gid=${gid}#gid=${gid}`;
+        break;
+      case 'CP':
+        gid = '1336297365';
+        url = `${baseUrl}&gid=${gid}#gid=${gid}`;
+        break;
+      default:
+        url = challengeSheetUrl;
+        gid = 'default';
+    }
+    
+    console.log(`📊 シートタイプ: ${sheetType} | GID: ${gid} | URL: ${url}`);
+    return url;
+  };
   const [companyData, setCompanyData] = useState<CompanyData[]>([]);
   const [processedCompanies, setProcessedCompanies] = useState<ProcessedCompany[]>([]);
   const [challengeCompanies, setChallengeCompanies] = useState<ChallengeCompany[]>([]);
@@ -130,6 +160,11 @@ export default function Home() {
   // CLシート用の日付選択機能のstate
   const [clAvailableDates, setClAvailableDates] = useState<DateOption[]>([]);
   const [clSelectedDate, setClSelectedDate] = useState<string>('');
+  const [selectedSheetType, setSelectedSheetType] = useState<'CL' | 'CU' | 'CP'>('CL');
+  
+  // スプレッドシート書き込み用の状態
+  const [isWritingToSheet, setIsWritingToSheet] = useState(false);
+  const [writeSheetError, setWriteSheetError] = useState('');
   const [clCompaniesByDate, setClCompaniesByDate] = useState<CompanyByDate[]>([]);
   const [isClDateLoading, setIsClDateLoading] = useState(false);
   const [isClCompanyLoading, setIsClCompanyLoading] = useState(false);
@@ -385,7 +420,7 @@ export default function Home() {
       const res = await fetch('/api/sheets/get-dates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: masterUrl }),
+        body: JSON.stringify({ url: masterUrl, sheetType: '取材' }),
       });
 
       const result = await res.json();
@@ -455,23 +490,30 @@ export default function Home() {
     setClAvailableDates([]);
     
     try {
-      console.log('CLシート日付一覧取得開始');
+      console.log(`${selectedSheetType}シート日付一覧取得開始`);
       
-      const res = await fetch('/api/sheets/get-cl-dates', {
+      // シートタイプに応じて適切なAPIエンドポイントを選択
+      const apiEndpoint = selectedSheetType === 'CL' ? '/api/sheets/get-cl-dates' :
+                         selectedSheetType === 'CU' ? '/api/sheets/get-cu-dates' :
+                         '/api/sheets/get-cp-dates';
+      
+      const res = await fetch(apiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: challengeSheetUrl }),
+        body: JSON.stringify({ 
+          url: getSheetUrlByType(selectedSheetType)
+        }),
       });
 
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed to load CL dates');
+      if (!res.ok) throw new Error(result.error || `Failed to load ${selectedSheetType} dates`);
 
-      console.log('CLシート日付一覧取得完了:', result);
+      console.log(`${selectedSheetType}シート日付一覧取得完了:`, result);
       setClAvailableDates(result.dates || []);
 
     } catch (err: unknown) {
       setClDateError(toMessage(err));
-      console.error('CLシート日付一覧取得エラー:', err);
+      console.error(`${selectedSheetType}シート日付一覧取得エラー:`, err);
     } finally {
       setIsClDateLoading(false);
     }
@@ -495,9 +537,14 @@ export default function Home() {
     setClCompaniesByDate([]);
 
     try {
-      console.log(`CLシート企業データ取得開始: ${clSelectedDate}`);
+      console.log(`${selectedSheetType}シート企業データ取得開始: ${clSelectedDate}`);
       
-      const res = await fetch('/api/sheets/get-cl-companies-by-date', {
+      // シートタイプに応じて適切なAPIエンドポイントを選択
+      const apiEndpoint = selectedSheetType === 'CL' ? '/api/sheets/get-cl-companies-by-date' :
+                         selectedSheetType === 'CU' ? '/api/sheets/get-cu-companies-by-date' :
+                         '/api/sheets/get-cp-companies-by-date';
+      
+      const res = await fetch(apiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -507,9 +554,9 @@ export default function Home() {
       });
 
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed to load CL companies');
+      if (!res.ok) throw new Error(result.error || `Failed to load ${selectedSheetType} companies`);
 
-      console.log('CLシート企業データ取得完了:', result);
+      console.log(`${selectedSheetType}シート企業データ取得完了:`, result);
       
       // CompanyByDate形式に変換
       const companies: CompanyByDate[] = result.companies.map((company: any, index: number) => ({
@@ -518,6 +565,7 @@ export default function Home() {
         columnLetter: company.columnLetter,
         conversationData: company.conversationData,
         conversationLength: company.conversationData?.length || 0,
+        sheetName: result.sheetName || clSelectedDate, // シート名を追加
         conversationLines: (company.conversationData?.split('\n') || []).length,
         sourceUrl: selectedDateData.url,
         date: clSelectedDate,
@@ -533,7 +581,7 @@ export default function Home() {
 
     } catch (err: unknown) {
       setClDateError(toMessage(err));
-      console.error('CLシート企業データ取得エラー:', err);
+      console.error(`${selectedSheetType}シート企業データ取得エラー:`, err);
     } finally {
       setIsClCompanyLoading(false);
     }
@@ -564,7 +612,8 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           date: clSelectedDate,
-          url: selectedDateData.url
+          url: selectedDateData.url,
+          sheetType: selectedSheetType
         }),
       });
 
@@ -588,6 +637,7 @@ export default function Home() {
           matches: flatMatches,
           totalMatches,
           sourceUrl: selectedDateData.url,
+          sheetName: result.sheetType || selectedSheetType, // シートタイプをシート名として使用
           success: !item.error,
           error: item.error
         };
@@ -635,6 +685,7 @@ export default function Home() {
           conversationData: company.conversationData,
           columnLetter: company.columnLetter,
           extractionMethod: company.extractionMethod,
+          sheetType: selectedSheetType, // シートタイプを追加
           // デフォルトフィルターがAPIで自動適用されるため、excludeSpeakersは不要
           includeSpeakers: [], // 必要に応じて実装
           excludeKeywords: [] // 必要に応じて実装
@@ -654,7 +705,10 @@ export default function Home() {
                 ...c, 
                 isChallengeProcessing: false, 
                 isChallengeProcessed: true,
-                challengeResult: result
+                challengeResult: {
+                  ...result,
+                  sheetType: result.sheetType || selectedSheetType
+                }
               }
             : c;
         })
@@ -775,6 +829,66 @@ export default function Home() {
       console.error('課題抽出とマッチング処理エラー:', err);
     } finally {
       setIsChallengeLoading(false);
+    }
+  };
+
+  // スプレッドシートに結果を書き込む関数
+  const handleWriteResultsToSheet = async () => {
+    if (challengeCompanies.length === 0) {
+      setWriteSheetError('書き込む結果がありません');
+      return;
+    }
+
+    setIsWritingToSheet(true);
+    setWriteSheetError('');
+
+    try {
+      console.log('スプレッドシートへの結果書き込み開始');
+      
+      // 結果をスプレッドシート用の形式に変換
+      const results = challengeCompanies.flatMap(company => {
+        if (!company.challenges?.challenges || company.challenges.challenges.length === 0) {
+          return [{
+            sheetName: company.sheetName || company.date, // シート名または日付を使用
+            companyName: company.companyName,
+            challenge: '課題が抽出されませんでした',
+            excludedSpeakers: '',
+            matchingCompany: '',
+            solution: ''
+          }];
+        }
+
+        return company.challenges.challenges.map((challenge: any) => ({
+          sheetName: company.sheetName || company.date, // シート名または日付を使用
+          companyName: company.companyName,
+          challenge: `${challenge.category}: ${challenge.title} - ${challenge.description}`,
+          excludedSpeakers: '', // 必要に応じて実装
+          matchingCompany: company.matches?.[0]?.company_name || '',
+          solution: company.matches?.[0]?.solution_details || ''
+        }));
+      });
+
+      const res = await fetch('/api/sheets/write-results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: 'https://docs.google.com/spreadsheets/d/1jiead_e52qCXW2zU0ohqJwLqdbb2OyhpAg1urVJEVCY/edit?usp=sharing',
+          results
+        }),
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to write results to spreadsheet');
+
+      console.log('スプレッドシートへの結果書き込み完了:', result);
+      alert(`${result.updatedRows}行の結果をスプレッドシートに書き込みました`);
+
+    } catch (err: unknown) {
+      const errorMessage = toMessage(err);
+      setWriteSheetError(errorMessage);
+      console.error('スプレッドシート書き込みエラー:', err);
+    } finally {
+      setIsWritingToSheet(false);
     }
   };
 
@@ -1167,9 +1281,13 @@ export default function Home() {
         <div className="absolute inset-0 bg-gradient-to-b from-[#0b1020] via-[#0b1020]/80 to-[#0b1020]"></div>
         <div className="relative container mx-auto px-4">
           <div className="bg-white/95 text-slate-900 rounded-xl shadow-2xl p-6 md:p-8 backdrop-blur-sm">
-            <h2 className="text-4xl font-bold [font-family:var(--font-serif-jp)] text-slate-900 tracking-wide mb-4">課題抽出・マッチング処理（CLシート）</h2>
+            <h2 className="text-4xl font-bold [font-family:var(--font-serif-jp)] text-slate-900 tracking-wide mb-4">課題抽出・マッチング処理（CL/CU/CPシート）</h2>
             <p className="text-gray-600 mb-6">
-              CLシート（<a href={challengeSheetUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">リンク</a>）から「会話データなし」以外の企業データを対象に、課題を抽出して既存企業とのマッチングを行います。
+              CL/CU/CPシートから「会話データなし」以外の企業データを対象に、課題を抽出して既存企業とのマッチングを行います。
+              <br />
+              CLシート: <a href={getSheetUrlByType('CL')} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">リンク</a> | 
+              CUシート: <a href={getSheetUrlByType('CU')} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">リンク</a> | 
+              CPシート: <a href={getSheetUrlByType('CP')} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">リンク</a>
             </p>
 
             {/* CLシート用日付選択セクション */}
@@ -1177,14 +1295,33 @@ export default function Home() {
               <h3 className="text-xl font-semibold text-slate-800 mb-4">日付選択による課題抽出・マッチング</h3>
               
               <div className="space-y-4">
-                <div>
-                  <button 
-                    onClick={handleLoadClDates}
-                    disabled={isClDateLoading}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition"
-                  >
-                    {isClDateLoading ? '読み込み中...' : 'CLシートの利用可能な日付を読み込み'}
-                  </button>
+                <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">シートタイプ:</label>
+                    <select
+                      value={selectedSheetType}
+                      onChange={(e) => {
+                        setSelectedSheetType(e.target.value as 'CL' | 'CU' | 'CP');
+                        setClSelectedDate(''); // シートタイプ変更時に日付選択をリセット
+                        setClAvailableDates([]); // 利用可能日付もリセット
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="CL">CLシート</option>
+                      <option value="CU">CUシート</option>
+                      <option value="CP">CPシート</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <button 
+                      onClick={handleLoadClDates}
+                      disabled={isClDateLoading}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition"
+                    >
+                      {isClDateLoading ? '読み込み中...' : `${selectedSheetType}シートの利用可能な日付を読み込み`}
+                    </button>
+                  </div>
                 </div>
 
                 {clAvailableDates.length > 0 && (
@@ -1218,7 +1355,7 @@ export default function Home() {
                       disabled={!clSelectedDate || isChallengeLoading}
                       className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 transition"
                     >
-                      {isChallengeLoading ? '処理中...' : '課題抽出・マッチング実行'}
+                      {isChallengeLoading ? '処理中...' : `${selectedSheetType}シート課題抽出・マッチング実行`}
                     </button>
                   </div>
                 )}
@@ -1436,7 +1573,22 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-b from-[#0b1020] via-[#0b1020]/80 to-[#0b1020]"></div>
           <div className="relative container mx-auto px-4">
             <div className="bg-white/95 text-slate-900 rounded-xl shadow-2xl p-6 md:p-8 backdrop-blur-sm">
-              <h2 className="text-4xl font-bold [font-family:var(--font-serif-jp)] text-slate-900 tracking-wide mb-6">課題抽出・マッチング結果（CLシート）</h2>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-4xl font-bold [font-family:var(--font-serif-jp)] text-slate-900 tracking-wide">課題抽出・マッチング結果（{selectedSheetType}シート）</h2>
+                <button 
+                  onClick={handleWriteResultsToSheet}
+                  disabled={isWritingToSheet}
+                  className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 transition"
+                >
+                  {isWritingToSheet ? '書き込み中...' : 'スプレッドシートに書き込み'}
+                </button>
+              </div>
+              
+              {writeSheetError && (
+                <div className="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+                  エラー: {writeSheetError}
+                </div>
+              )}
               
               <div className="grid gap-6">
                 {challengeCompanies.map((company, index) => {

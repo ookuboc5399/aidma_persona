@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetsClient } from '../../../../lib/google';
+import { logCompanyData, logError } from '../../../../lib/logger';
 import { extractMultipleCompaniesFromConversation, extractCompanySpecificConversation } from '../../../../lib/company-extractor';
 
 function getSheetIdFromUrl(url: string): string | null {
@@ -43,10 +44,15 @@ async function retryWithBackoff<T>(
 export async function POST(req: NextRequest) {
   try {
     const sheets = getSheetsClient();
-    const { date, url } = await req.json();
+    const { date, url, sheetType = 'CL' } = await req.json();
     
     if (!date || !url) {
       return NextResponse.json({ error: 'Date and URL are required' }, { status: 400 });
+    }
+
+    // シートタイプの検証
+    if (!['CL', 'CU', 'CP'].includes(sheetType)) {
+      return NextResponse.json({ error: 'Invalid sheet type. Must be CL, CU, or CP' }, { status: 400 });
     }
 
     const sheetId = getSheetIdFromUrl(url);
@@ -54,15 +60,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid sheet URL' }, { status: 400 });
     }
 
-    console.log('=== CLシート企業データ取得開始 ===');
-    console.log(`日付: ${date}`);
-    console.log(`シートID: ${sheetId}`);
+    logCompanyData(sheetType as 'CL' | 'CU' | 'CP', '企業データ取得開始', {
+      date,
+      sheetId,
+      sheetType,
+      url
+    });
 
-    // D列のデータを取得（処理1と同じ方式）
+    // スプレッドシートのメタデータを取得してシート名を取得
+    const spreadsheetMetadata = await retryWithBackoff(async () => {
+      return await sheets.spreadsheets.get({
+        spreadsheetId: sheetId,
+      });
+    });
+
+    const sheetName = spreadsheetMetadata.data.properties?.title || 'Unknown Sheet';
+    const sheetsList = spreadsheetMetadata.data.sheets || [];
+    
+    logCompanyData(sheetType as 'CL' | 'CU' | 'CP', 'スプレッドシート情報', {
+      sheetName,
+      sheetId,
+      sheetsList: sheetsList.map((sheet: any, index: number) => ({
+        index,
+        title: sheet.properties?.title,
+        gid: sheet.properties?.sheetId
+      }))
+    });
+
+    // CLシート（GID: 0）のA列からD列のデータを取得
     const response = await retryWithBackoff(async () => {
       return await sheets.spreadsheets.values.get({
         spreadsheetId: sheetId,
-        range: 'A:D',
+        range: 'A:D', // GIDで指定されているので、シート名指定は不要
       });
     });
 
@@ -98,22 +127,32 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
       .join('\n');
 
-    console.log(`D列会話データ長: ${conversationData.length}文字`);
+    logCompanyData(sheetType as 'CL' | 'CU' | 'CP', 'D列会話データ取得', {
+      dataLength: conversationData.length,
+      first100Chars: conversationData.substring(0, 100),
+      hasValidData: !(!conversationData || conversationData.trim() === '会話データ')
+    });
 
     if (!conversationData || conversationData.trim() === '会話データ') {
-      console.log('D列に有効な会話データが見つかりません');
+      logCompanyData(sheetType as 'CL' | 'CU' | 'CP', 'D列に有効な会話データが見つかりません');
       return NextResponse.json({
         success: true,
         companies: [],
         totalCompanies: 0,
-        message: 'D列に有効な会話データが見つかりませんでした'
+        message: `${sheetType}シートのD列に有効な会話データが見つかりませんでした`
       });
     }
 
     // D列の会話データから複数企業を抽出
     try {
       const extractedCompanies = extractMultipleCompaniesFromConversation(conversationData);
-      console.log(`D列から抽出された企業数: ${extractedCompanies.length}`);
+      logCompanyData(sheetType as 'CL' | 'CU' | 'CP', '企業抽出結果', {
+        extractedCount: extractedCompanies.length,
+        companies: extractedCompanies.map(company => ({
+          name: company.companyName,
+          confidence: company.confidence
+        }))
+      });
       
       for (const extracted of extractedCompanies) {
         // 企業固有の会話データを抽出
@@ -157,7 +196,7 @@ export async function POST(req: NextRequest) {
       return acc;
     }, [] as typeof allCompanies);
 
-    console.log(`✅ CLシート企業データ取得完了: ${uniqueCompanies.length}社を発見`);
+    console.log(`✅ ${sheetType}シート企業データ取得完了: ${uniqueCompanies.length}社を発見`);
 
     return NextResponse.json({
       success: true,
@@ -165,11 +204,13 @@ export async function POST(req: NextRequest) {
       totalCompanies: uniqueCompanies.length,
       date,
       sheetId,
+      sheetName,
+      sheetType,
       message: `${uniqueCompanies.length}社の課題抽出対象企業を取得しました`
     });
 
   } catch (error: unknown) {
-    console.error('CLシート企業データ取得エラー:', error);
+    logError('シート企業データ取得', error);
     const errorMessage = getErrorMessage(error);
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }

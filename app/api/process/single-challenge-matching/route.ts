@@ -232,6 +232,7 @@ export async function POST(req: NextRequest) {
       conversationData, 
       columnLetter, 
       extractionMethod,
+      sheetType = 'CL',
       excludeSpeakers,
       includeSpeakers,
       excludeKeywords
@@ -247,6 +248,7 @@ export async function POST(req: NextRequest) {
     console.log(`企業名: ${companyName}`);
     console.log(`列: ${columnLetter || '不明'}`);
     console.log(`抽出方法: ${extractionMethod || '不明'}`);
+    console.log(`シートタイプ: ${sheetType}`);
 
     // 会話データの話者情報を分析
     const originalSpeakers = extractSpeakers(conversationData);
@@ -332,7 +334,10 @@ export async function POST(req: NextRequest) {
       console.log(`- 最適企業: ${selectedCompanies[0].company_name} (スコア: ${selectedCompanies[0].total_score?.toFixed(3) || 'N/A'})`);
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      sheetType
+    });
 
   } catch (error: unknown) {
     console.error('単一企業の課題抽出・マッチング処理エラー:', error);
@@ -341,6 +346,7 @@ export async function POST(req: NextRequest) {
       success: false,
       error: errorMessage,
       companyName: requestData?.companyName || '不明',
+      sheetType: requestData?.sheetType || 'CL',
       processedAt: new Date().toISOString()
     }, { status: 500 });
   }

@@ -41,9 +41,11 @@ async function retryWithBackoff<T>(
 }
 
 export async function POST(req: NextRequest) {
+  let sheetType: 'CL' | 'CU' | 'CP';
   try {
     const sheets = getSheetsClient();
-    const { url: sheetUrl, sheetType = 'CL' } = await req.json();
+    const { url: sheetUrl, sheetType: st = 'CP' } = await req.json();
+    sheetType = st as 'CL' | 'CU' | 'CP';
     
     if (!sheetUrl) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
@@ -56,6 +58,25 @@ export async function POST(req: NextRequest) {
     const sheetId = getSheetIdFromUrl(sheetUrl);
     if (!sheetId) {
       return NextResponse.json({ error: `Invalid ${sheetType} Sheet URL` }, { status: 400 });
+    }
+
+    try {
+      const spreadsheetMetadata = await sheets.spreadsheets.get({
+        spreadsheetId: sheetId,
+        fields: 'sheets.properties.title',
+      });
+
+      const sheetTitles = spreadsheetMetadata.data.sheets?.map(s => s.properties?.title);
+      logDateData(sheetType, 'スプレッドシート内のシート一覧', { sheets: sheetTitles });
+
+      if (!sheetTitles?.includes(sheetType)) {
+        logError(sheetType, `指定されたシート(${sheetType})がスプレッドシート内に見つかりません。`);
+        return NextResponse.json({ error: `Sheet '${sheetType}' not found in spreadsheet.` }, { status: 404 });
+      }
+
+    } catch (metaError) {
+      logError(sheetType, 'スプレッドシートメタデータの取得に失敗しました', metaError);
+      return NextResponse.json({ error: 'Failed to retrieve spreadsheet metadata.' }, { status: 500 });
     }
 
     logDateData(sheetType, '日付取得開始', {
@@ -85,16 +106,13 @@ export async function POST(req: NextRequest) {
       const url = row?.[1];
       const status = row?.[2];
 
-      if (date && url && status && 
-          status !== '会話データなし' && 
-          status !== 'URL不正' && 
-          status.trim() !== '') {
+      if (date && url && status !== '会話データなし' && status !== 'URL不正') {
         logDateData(sheetType, `日付データ: ${date}`, { url });
         validDates.push({
           rowIndex: index + 1,
           date,
           url,
-          status,
+          status: status || '', // 空欄の場合も考慮
           displayDate: date
         });
       }
@@ -120,7 +138,7 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: unknown) {
-    logError(`${sheetType}シート日付取得`, error);
+    logError('CPシート日付取得', error);
     const errorMessage = getErrorMessage(error);
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }

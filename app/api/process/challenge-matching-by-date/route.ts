@@ -153,18 +153,29 @@ async function findMatchingCompanies(challenges: string[]): Promise<any[]> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { date, url } = await req.json();
+    const { date, url, sheetType = 'CL' } = await req.json();
     
     if (!date || !url) {
       return NextResponse.json({ error: 'Date and URL are required' }, { status: 400 });
     }
 
+    // シートタイプの検証
+    if (!['CL', 'CU', 'CP'].includes(sheetType)) {
+      return NextResponse.json({ error: 'Invalid sheet type. Must be CL, CU, or CP' }, { status: 400 });
+    }
+
     console.log('=== 指定日付の課題抽出・マッチング処理開始 ===');
     console.log(`対象日付: ${date}`);
     console.log(`対象URL: ${url}`);
+    console.log(`シートタイプ: ${sheetType}`);
+    console.log(`📊 参照シート: ${sheetType}シート | URL: ${url}`);
 
     // 1. 指定日付の企業データを取得
-    const companiesResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}/api/sheets/get-cl-companies-by-date`, {
+    const companiesApiEndpoint = sheetType === 'CL' ? '/api/sheets/get-cl-companies-by-date' :
+                                sheetType === 'CU' ? '/api/sheets/get-cu-companies-by-date' :
+                                '/api/sheets/get-cp-companies-by-date';
+    
+    const companiesResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3001'}${companiesApiEndpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ date, url })
@@ -251,6 +262,7 @@ export async function POST(req: NextRequest) {
       success: true,
       message: `${date}の課題抽出・マッチング処理が完了しました`,
       date,
+      sheetType,
       results: processingResults,
       totalCompanies: companies.length,
       successCount,
@@ -258,7 +270,8 @@ export async function POST(req: NextRequest) {
       summary: {
         processedAt: new Date().toISOString(),
         targetDate: date,
-        targetUrl: url
+        targetUrl: url,
+        sheetType
       }
     });
 

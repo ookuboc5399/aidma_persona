@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSheetsClient } from '../../../../lib/google';
+import { logDateData, logError } from '../../../../lib/logger';
 
 function getSheetIdFromUrl(url: string): string | null {
   try {
@@ -40,33 +41,53 @@ async function retryWithBackoff<T>(
 }
 
 export async function POST(req: NextRequest) {
+  let sheetType: string;
   try {
     const sheets = getSheetsClient();
-    const { url: masterSheetUrl, sheetType = '取材' } = await req.json();
+    const { url: sheetUrl, sheetType: st = 'CU' } = await req.json();
+    sheetType = st;
     
-    if (!masterSheetUrl) {
+    if (!sheetUrl) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    // シートタイプの検証
-    if (!['取材', 'CU', 'CP'].includes(sheetType)) {
-      return NextResponse.json({ error: 'Invalid sheet type. Must be 取材, CU, or CP' }, { status: 400 });
+    if (!['CL', 'CU', 'CP'].includes(sheetType)) {
+      return NextResponse.json({ error: 'Invalid sheet type. Must be CL, CU, or CP' }, { status: 400 });
     }
 
-    const masterSheetId = getSheetIdFromUrl(masterSheetUrl);
-    if (!masterSheetId) {
-      return NextResponse.json({ error: 'Invalid Master Sheet URL' }, { status: 400 });
+    const sheetId = getSheetIdFromUrl(sheetUrl);
+    if (!sheetId) {
+      return NextResponse.json({ error: `Invalid ${sheetType} Sheet URL` }, { status: 400 });
     }
 
-    console.log(`=== ${sheetType}シート日付取得開始 ===`);
-    console.log(`マスターシートID: ${masterSheetId}`);
-    console.log(`シートタイプ: ${sheetType}`);
+    try {
+      const spreadsheetMetadata = await sheets.spreadsheets.get({
+        spreadsheetId: sheetId,
+        fields: 'sheets.properties.title',
+      });
 
-    // A列（日付）とB列（URL）を取得
+      const sheetTitles = spreadsheetMetadata.data.sheets?.map(s => s.properties?.title);
+      logDateData(sheetType, 'スプレッドシート内のシート一覧', { sheets: sheetTitles });
+
+      if (!sheetTitles?.includes(sheetType)) {
+        logError(sheetType, `指定されたシート(${sheetType})がスプレッドシート内に見つかりません。`);
+        return NextResponse.json({ error: `Sheet '${sheetType}' not found in spreadsheet.` }, { status: 404 });
+      }
+
+    } catch (metaError) {
+      logError(sheetType, 'スプレッドシートメタデータの取得に失敗しました', metaError);
+      return NextResponse.json({ error: 'Failed to retrieve spreadsheet metadata.' }, { status: 500 });
+    }
+
+    logDateData(sheetType, '日付取得開始', {
+      sheetId: sheetId,
+      url: sheetUrl,
+    });
+
     const listResponse = await retryWithBackoff(async () => {
       return await sheets.spreadsheets.values.get({
-        spreadsheetId: masterSheetId,
-        range: `${sheetType}!A2:B`,
+        spreadsheetId: sheetId,
+        range: `${sheetType}!A:C`,
       });
     });
 
@@ -78,44 +99,46 @@ export async function POST(req: NextRequest) {
       }, { status: 404 });
     }
 
-    // 有効な日付のみを抽出（ヘッダー行はrange指定で除外済み）
     const validDates = [];
-    for (let index = 0; index < allRows.length; index++) { // インデックス0から開始
+    for (let index = 1; index < allRows.length; index++) {
       const row = allRows[index];
       const date = row?.[0];
       const url = row?.[1];
+      const status = row?.[2];
 
-      // 日付とURLの両方が存在する行のみを含める
-      if (date && url) {
+      if (date && url && status !== '会話データなし' && status !== 'URL不正') {
+        logDateData(sheetType, `日付データ: ${date}`, { url });
         validDates.push({
-          rowIndex: index + 2, // 1ベースのインデックス（A2から始まるため+2）
+          rowIndex: index + 1,
           date,
           url,
-          displayDate: date // 表示用の日付
+          status: status || '', // 空欄の場合も考慮
+          displayDate: date
         });
       }
     }
 
-    // 日付でソート（新しい順）
     validDates.sort((a, b) => {
       const dateA = new Date(a.date.replace(/\//g, '-'));
       const dateB = new Date(b.date.replace(/\//g, '-'));
       return dateB.getTime() - dateA.getTime();
     });
 
-    console.log(`✅ ${sheetType}シート日付取得完了: ${validDates.length}件の有効な日付を発見`);
+    logDateData(sheetType, '日付取得完了', {
+      validDatesCount: validDates.length,
+      validDates: validDates.map(vd => ({ date: vd.date, url: vd.url }))
+    });
 
     return NextResponse.json({
       success: true,
       dates: validDates,
       totalDates: validDates.length,
       sheetType,
-      message: `${validDates.length}件の有効な日付を取得しました`,
-      debug_raw_google_response: allRows
+      message: `${validDates.length}件の有効な日付を取得しました（課題抽出対象）`
     });
 
   } catch (error: unknown) {
-    console.error('シート日付取得エラー:', error);
+    logError(`${sheetType}シート日付取得`, error);
     const errorMessage = getErrorMessage(error);
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
