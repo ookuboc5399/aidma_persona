@@ -157,6 +157,7 @@ export default function Home() {
   const [isCompanyLoading, setIsCompanyLoading] = useState(false);
   const [dateError, setDateError] = useState('');
   const [selectedCompanyIndex, setSelectedCompanyIndex] = useState<number | null>(null);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
 
   // CLシート用の日付選択機能のstate
   const [clAvailableDates, setClAvailableDates] = useState<DateOption[]>([]);
@@ -178,6 +179,27 @@ export default function Home() {
 
   const handleReadSheet = async () => {
     await handleReadSheetInternal();
+  };
+
+  // 選択した日付の全企業を一括でデータベースに保存
+  const handleBulkRegisterByDate = async () => {
+    if (companiesByDate.length === 0) return;
+    setIsBulkProcessing(true);
+    setDateError('');
+
+    try {
+      for (const company of companiesByDate) {
+        // 既に処理済み/処理中の企業はスキップ
+        if (company.isProcessed || company.isProcessing) continue;
+        await handleProcessSingleCompany(company);
+        // API負荷軽減のための短い待機
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    } catch (err: unknown) {
+      setDateError(toMessage(err));
+    } finally {
+      setIsBulkProcessing(false);
+    }
   };
 
   const handleReadSpecificRow = async (rowIndex: number) => {
@@ -1146,6 +1168,17 @@ export default function Home() {
                       {selectedCompanyIndex !== null && companiesByDate[selectedCompanyIndex]?.isProcessing ? '処理中...' : 
                        selectedCompanyIndex !== null && companiesByDate[selectedCompanyIndex]?.isProcessed ? '処理完了' : 'データベースに保存'}
                     </button>
+                    <button
+                      onClick={handleBulkRegisterByDate}
+                      disabled={isBulkProcessing || companiesByDate.every(c => c.isProcessed || c.isProcessing)}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-400 transition"
+                      title="表示中の全企業をまとめて登録"
+                    >
+                      {isBulkProcessing ? '一括登録中...' : '一括登録'}
+                    </button>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    進捗: {companiesByDate.filter(c => c.isProcessed).length}/{companiesByDate.length} 社 登録済み
                   </div>
                   {selectedCompanyIndex !== null && companiesByDate[selectedCompanyIndex]?.error && (
                     <div className="bg-red-50 p-3 rounded border border-red-200 mb-4">
