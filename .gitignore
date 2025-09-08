@@ -51,3 +51,7 @@ next-env.d.ts
 # logs
 *.log
 snowflake.log
+
+# logs
+*.log
+snowflake.log
