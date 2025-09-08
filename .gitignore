@@ -46,3 +46,5 @@ next-env.d.ts
 
 # MCP / Cursor config (contains tokens)
 .cursor/
+
+.snowflake.log
