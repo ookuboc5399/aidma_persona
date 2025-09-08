@@ -1,0 +1,20 @@
+[33m4cf83e1[m[33m ([m[1;36mHEAD -> [m[1;32msurface-work[m[33m, [m[1;31morigin/surface-work[m[33m)[m 取材一括処理実装
+[33m87b97ae[m chore: ignore log files
+[33ma451672[m コンフリクト修正
+[33m5527ed9[m snowflake.logをコミットから削除
+[33m542a8a0[m 過去取材処理削除
+[33mf752924[m 過去取材処理消去
+[33md7489b3[m 過去の取材特定行処理削除
+[33m061aadf[m スプレッドシート出力修正
+[33m9cf9651[m 全体処理ボタン削除
+[33me12dcd9[m cuやcpも処理できるようにした
+[33md1d40a0[m 話者除外修正
+[33m2e275f7[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m 課題抽出修正 (#1)
+[33m436af59[m[33m ([m[1;32mmain[m[33m)[m マッチングエラー
+[33ma12b603[m 修正
+[33m34a7cde[m エラー修正final
+[33mfd46900[m ビルドエラー修正
+[33mf11eb41[m 0826
+[33m97b0d0a[m 企業課題解決マッチングシステムの初期実装
+[33m5b5d783[m google_credentials追加
+[33m28c6e30[m gitignoreァイル修正

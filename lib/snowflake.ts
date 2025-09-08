@@ -35,18 +35,20 @@ class SnowflakeClient {
     });
   }
 
-  async executeQuery(sqlText: string): Promise<any[]> {
+  async executeQuery(sqlText: string, binds: any[] = []): Promise<any[]> {
     await this.connect();
 
     return new Promise((resolve, reject) => {
       this.connection.execute({
         sqlText,
+        binds,
         complete: (err: any, stmt: any, rows: any[]) => {
           if (err) {
             console.error('Snowflake query error:', err);
             reject(err);
           } else {
-            resolve(rows);
+            // UPDATE文などの場合、rowsはundefinedになることがある
+            resolve(rows || []);
           }
         }
       });
@@ -83,29 +85,32 @@ export async function searchCompaniesInSnowflake(searchCriteria: {
 
   // 動的なWHERE句を構築
   const whereConditions: string[] = [];
+  const binds: any[] = [];
   
   if (keywords.length > 0) {
-    const keywordConditions = keywords.map(keyword => 
-      `(UPPER(COMPANY_NAME) LIKE '%${keyword.toUpperCase()}%' OR 
-        UPPER(BUSINESS_DESCRIPTION) LIKE '%${keyword.toUpperCase()}%' OR
-        UPPER(BUSINESS_DESCRIPTION) LIKE '%${keyword.toUpperCase()}%')`
-    );
+    const keywordConditions = keywords.map(keyword => {
+      const upperKeyword = `%${keyword.toUpperCase()}%`;
+      binds.push(upperKeyword, upperKeyword);
+      return `(UPPER(COMPANY_NAME) LIKE ? OR UPPER(BUSINESS_DESCRIPTION) LIKE ?)`;
+    });
     whereConditions.push(`(${keywordConditions.join(' OR ')})`);
   }
 
   if (industry) {
-    whereConditions.push(`UPPER(INDUSTRY) LIKE '%${industry.toUpperCase()}%'`);
+    whereConditions.push(`UPPER(INDUSTRY) LIKE ?`);
+    binds.push(`%${industry.toUpperCase()}%`);
   }
 
   if (region) {
-    whereConditions.push(`UPPER(REGION) LIKE '%${region.toUpperCase()}%'`);
+    whereConditions.push(`UPPER(REGION) LIKE ?`);
+    binds.push(`%${region.toUpperCase()}%`);
   }
-
-
 
   const whereClause = whereConditions.length > 0 
     ? `WHERE ${whereConditions.join(' AND ')}`
     : '';
+
+  binds.push(limit);
 
   const query = `
     SELECT 
@@ -113,21 +118,19 @@ export async function searchCompaniesInSnowflake(searchCriteria: {
       COMPANY_NAME,
       INDUSTRY,
       BUSINESS_DESCRIPTION,
-
       REGION,
       PREFECTURE,
-
       EMPLOYEE_COUNT,
       INCORPORATION_DATE,
       OFFICIAL_WEBSITE
     FROM COMPANIES 
     ${whereClause}
     ORDER BY EMPLOYEE_COUNT DESC
-    LIMIT ${limit}
+    LIMIT ?
   `;
 
   try {
-    const results = await snowflakeClient.executeQuery(query);
+    const results = await snowflakeClient.executeQuery(query, binds);
     return results;
   } catch (error) {
     console.error('Error searching companies in Snowflake:', error);
@@ -184,14 +187,46 @@ export async function findSolutionCompanies(challengeKeywords: string[]): Promis
 export async function getCompanyDetails(companyId: string): Promise<any> {
   const query = `
     SELECT * FROM COMPANIES 
-    WHERE COMPANY_ID = '${companyId}'
+    WHERE COMPANY_ID = ?
   `;
 
   try {
-    const results = await snowflakeClient.executeQuery(query);
+    const results = await snowflakeClient.executeQuery(query, [companyId]);
     return results[0] || null;
   } catch (error) {
     console.error('Error getting company details from Snowflake:', error);
+    throw error;
+  }
+}
+
+/**
+ * 企業のコンサルタント情報を更新する
+ * @param companyName 対象の企業名
+ * @param consultantNames コンサルタント名のリスト
+ */
+export async function updateCompanyConsultant(companyName: string, consultantNames: string[]): Promise<void> {
+  if (!companyName) {
+    console.warn('企業名が指定されていないため、コンサルタント情報の更新をスキップします。');
+    return;
+  }
+  if (consultantNames.length === 0) {
+    console.log(`企業「${companyName}」の更新対象コンサルタントがいないため、処理をスキップします。`);
+    return;
+  }
+
+  const consultantsString = consultantNames.join(', ');
+
+  const query = `
+    UPDATE COMPANIES
+    SET CONSULTANT_NAME = ?
+    WHERE COMPANY_NAME = ?
+  `;
+
+  try {
+    await snowflakeClient.executeQuery(query, [consultantsString, companyName]);
+    console.log(`✅ 企業「${companyName}」のコンサルタント情報を更新しました: ${consultantsString}`);
+  } catch (error) {
+    console.error(`❌ 企業「${companyName}」のコンサルタント情報更新中にエラーが発生しました:`, error);
     throw error;
   }
 }
