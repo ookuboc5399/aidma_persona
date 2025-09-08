@@ -48,3 +48,6 @@ next-env.d.ts
 .cursor/
 
 .snowflake.log
+# logs
+*.log
+snowflake.log
