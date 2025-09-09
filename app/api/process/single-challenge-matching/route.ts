@@ -285,6 +285,27 @@ export async function POST(req: NextRequest) {
     console.log(`- 除外された発言: ${filterResult.excludedLines}件`);
     console.log(`- 残った発言: ${filterResult.includedLines}件`);
 
+    // 除外された話者をSnowflakeのCONSULTANT_NAME列に保存
+    console.log(`🔍 除外話者保存処理開始: ${filterResult.excludedSpeakers.length}名の話者が除外されました`);
+    if (filterResult.excludedSpeakers.length > 0) {
+      console.log(`📝 保存対象の除外話者: [${filterResult.excludedSpeakers.join(', ')}]`);
+      console.log(`🏢 対象企業: ${companyName}`);
+      
+      try {
+        const { updateCompanyConsultant } = await import('@/lib/snowflake');
+        console.log(`🔄 updateCompanyConsultant関数を呼び出し中...`);
+        await updateCompanyConsultant(companyName, filterResult.excludedSpeakers);
+        console.log(`✅ 企業「${companyName}」の除外話者情報をSnowflakeに保存しました: ${filterResult.excludedSpeakers.join(', ')}`);
+      } catch (error) {
+        console.error(`❌ 企業「${companyName}」の除外話者情報保存中にエラーが発生しました:`, error);
+        console.error(`エラーの詳細:`, error.message);
+        console.error(`スタックトレース:`, error.stack);
+        // エラーが発生しても処理は継続
+      }
+    } else {
+      console.log(`ℹ️ 除外された話者がいないため、CONSULTANT_NAME列の更新をスキップします`);
+    }
+
     // 1. 課題抽出
     console.log('課題抽出中...');
     const challenges = await extractChallengesFromConversation(processedConversationData, companyName);

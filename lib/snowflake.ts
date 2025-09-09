@@ -112,6 +112,10 @@ export async function searchCompaniesInSnowflake(searchCriteria: {
 
   binds.push(limit);
 
+  // CONSULTANT_NAME列が存在するかチェックしてからクエリを構築
+  const consultantNameExists = await checkConsultantNameColumnExists();
+  const consultantNameColumn = consultantNameExists ? ', CONSULTANT_NAME' : '';
+
   const query = `
     SELECT 
       COMPANY_ID,
@@ -122,7 +126,7 @@ export async function searchCompaniesInSnowflake(searchCriteria: {
       PREFECTURE,
       EMPLOYEE_COUNT,
       INCORPORATION_DATE,
-      OFFICIAL_WEBSITE
+      OFFICIAL_WEBSITE${consultantNameColumn}
     FROM COMPANIES 
     ${whereClause}
     ORDER BY EMPLOYEE_COUNT DESC
@@ -185,8 +189,22 @@ export async function findSolutionCompanies(challengeKeywords: string[]): Promis
 
 // 企業の詳細情報を取得
 export async function getCompanyDetails(companyId: string): Promise<any> {
+  // CONSULTANT_NAME列が存在するかチェックしてからクエリを構築
+  const consultantNameExists = await checkConsultantNameColumnExists();
+  const consultantNameColumn = consultantNameExists ? ', CONSULTANT_NAME' : '';
+
   const query = `
-    SELECT * FROM COMPANIES 
+    SELECT 
+      COMPANY_ID,
+      COMPANY_NAME,
+      INDUSTRY,
+      BUSINESS_DESCRIPTION,
+      REGION,
+      PREFECTURE,
+      EMPLOYEE_COUNT,
+      INCORPORATION_DATE,
+      OFFICIAL_WEBSITE${consultantNameColumn}
+    FROM COMPANIES 
     WHERE COMPANY_ID = ?
   `;
 
@@ -200,11 +218,95 @@ export async function getCompanyDetails(companyId: string): Promise<any> {
 }
 
 /**
+ * CONSULTANT_NAME列が存在するかチェックする
+ */
+async function checkConsultantNameColumnExists(): Promise<boolean> {
+  console.log(`🔍 checkConsultantNameColumnExists関数開始`);
+  try {
+    const checkQuery = `
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_NAME = 'COMPANIES' 
+      AND COLUMN_NAME = 'CONSULTANT_NAME'
+      AND TABLE_SCHEMA = UPPER(?)
+    `;
+    
+    console.log(`🔄 列存在確認クエリ実行: ${checkQuery}`);
+    console.log(`📊 スキーマパラメータ: "${snowflakeConfig.schema}"`);
+    
+    const result = await snowflakeClient.executeQuery(checkQuery, [snowflakeConfig.schema]);
+    console.log(`📈 クエリ結果:`, result);
+    console.log(`📊 結果件数: ${result.length}`);
+    
+    const exists = result.length > 0;
+    console.log(`✅ 列の存在確認完了: ${exists ? '存在する' : '存在しない'}`);
+    return exists;
+  } catch (error) {
+    console.warn('CONSULTANT_NAME列の確認中にエラーが発生しました:', error);
+    console.warn(`エラーの詳細:`, error instanceof Error ? error.message : String(error));
+    console.warn(`スタックトレース:`, error instanceof Error ? error.stack : 'N/A');
+    return false;
+  }
+}
+
+/**
+ * CONSULTANT_NAME列が存在するかチェックし、存在しない場合は追加する
+ */
+async function ensureConsultantNameColumn(): Promise<void> {
+  console.log(`🔍 ensureConsultantNameColumn関数開始`);
+  try {
+    console.log(`🔍 CONSULTANT_NAME列の存在確認中...`);
+    const exists = await checkConsultantNameColumnExists();
+    console.log(`📊 列の存在確認結果: ${exists ? '存在する' : '存在しない'}`);
+    
+    if (!exists) {
+      console.log(`🔧 CONSULTANT_NAME列が存在しないため、追加処理を実行します`);
+      // 列が存在しない場合は追加
+      const alterQuery = `ALTER TABLE COMPANIES ADD COLUMN CONSULTANT_NAME VARCHAR(1000)`;
+      console.log(`🔄 ALTER TABLEクエリ実行: ${alterQuery}`);
+      
+      try {
+        await snowflakeClient.executeQuery(alterQuery);
+        console.log('✅ COMPANIESテーブルにCONSULTANT_NAME列を追加しました');
+        
+        // 追加後に再度確認
+        const recheckExists = await checkConsultantNameColumnExists();
+        console.log(`🔍 追加後の列存在確認: ${recheckExists ? '存在する' : '存在しない'}`);
+        
+        if (!recheckExists) {
+          console.error('❌ CONSULTANT_NAME列の追加に失敗した可能性があります');
+        }
+      } catch (alterError) {
+        console.error('❌ ALTER TABLEクエリの実行中にエラーが発生しました:', alterError);
+        console.error(`エラーの詳細:`, alterError instanceof Error ? alterError.message : String(alterError));
+        // 列が既に存在する場合のエラーを無視
+        const errorMessage = alterError instanceof Error ? alterError.message : String(alterError);
+        if (!errorMessage.includes('already exists') && !errorMessage.includes('duplicate')) {
+          throw alterError;
+        } else {
+          console.log('ℹ️ 列は既に存在するようです（エラーを無視します）');
+        }
+      }
+    } else {
+      console.log('✅ CONSULTANT_NAME列は既に存在します');
+    }
+  } catch (error) {
+    console.error('❌ CONSULTANT_NAME列の確認・追加中にエラーが発生しました:', error);
+    console.error(`エラーの詳細:`, error instanceof Error ? error.message : String(error));
+    console.error(`スタックトレース:`, error instanceof Error ? error.stack : 'N/A');
+    throw error;
+  }
+}
+
+/**
  * 企業のコンサルタント情報を更新する
  * @param companyName 対象の企業名
  * @param consultantNames コンサルタント名のリスト
  */
 export async function updateCompanyConsultant(companyName: string, consultantNames: string[]): Promise<void> {
+  console.log(`🔧 updateCompanyConsultant関数開始`);
+  console.log(`📋 入力パラメータ: companyName="${companyName}", consultantNames=[${consultantNames.join(', ')}]`);
+  
   if (!companyName) {
     console.warn('企業名が指定されていないため、コンサルタント情報の更新をスキップします。');
     return;
@@ -214,19 +316,145 @@ export async function updateCompanyConsultant(companyName: string, consultantNam
     return;
   }
 
+  console.log(`🔍 CONSULTANT_NAME列の存在確認・追加処理開始`);
+  // CONSULTANT_NAME列の存在確認・追加
+  await ensureConsultantNameColumn();
+  console.log(`✅ CONSULTANT_NAME列の確認完了`);
+  
+  // 最終的な列の存在確認
+  const finalColumnExists = await checkConsultantNameColumnExists();
+  if (!finalColumnExists) {
+    console.error('❌ CONSULTANT_NAME列が存在しないため、更新処理をスキップします');
+    return;
+  }
+
   const consultantsString = consultantNames.join(', ');
+  console.log(`📝 保存するコンサルタント文字列: "${consultantsString}"`);
+
+  // まず、該当する企業が存在するか確認
+  console.log(`🔍 企業「${companyName}」の存在確認中...`);
+  const checkCompanyQuery = `SELECT COMPANY_NAME FROM COMPANIES WHERE COMPANY_NAME = ?`;
+  const existingCompanies = await snowflakeClient.executeQuery(checkCompanyQuery, [companyName]);
+  console.log(`📊 企業存在確認結果: ${existingCompanies.length}件見つかりました`);
+  
+  if (existingCompanies.length === 0) {
+    console.warn(`⚠️ 企業「${companyName}」がCOMPANIESテーブルに見つかりません`);
+    // 部分マッチで検索してみる
+    const partialMatchQuery = `SELECT COMPANY_NAME FROM COMPANIES WHERE COMPANY_NAME LIKE ? LIMIT 5`;
+    const partialMatches = await snowflakeClient.executeQuery(partialMatchQuery, [`%${companyName}%`]);
+    console.log(`🔍 部分マッチ検索結果:`, partialMatches);
+    
+    if (partialMatches.length > 0) {
+      console.log(`💡 類似する企業名が見つかりました。最初の企業名を使用します: ${partialMatches[0].COMPANY_NAME}`);
+      companyName = partialMatches[0].COMPANY_NAME;
+    } else {
+      console.error(`❌ 企業「${companyName}」および類似する企業名が見つかりません`);
+      return;
+    }
+  }
 
   const query = `
     UPDATE COMPANIES
     SET CONSULTANT_NAME = ?
     WHERE COMPANY_NAME = ?
   `;
+  
+  console.log(`🔄 SQLクエリ実行開始: ${query}`);
+  console.log(`📊 バインドパラメータ: ["${consultantsString}", "${companyName}"]`);
 
   try {
-    await snowflakeClient.executeQuery(query, [consultantsString, companyName]);
-    console.log(`✅ 企業「${companyName}」のコンサルタント情報を更新しました: ${consultantsString}`);
+    const result = await snowflakeClient.executeQuery(query, [consultantsString, companyName]);
+    console.log(`✅ SQLクエリ実行完了`);
+    console.log(`📈 クエリ結果:`, result);
+    
+    // 更新後の確認
+    const verifyQuery = `SELECT COMPANY_NAME, CONSULTANT_NAME FROM COMPANIES WHERE COMPANY_NAME = ?`;
+    const verifyResult = await snowflakeClient.executeQuery(verifyQuery, [companyName]);
+    console.log(`🔍 更新後の確認結果:`, verifyResult);
+    
+    if (verifyResult.length > 0 && verifyResult[0].CONSULTANT_NAME === consultantsString) {
+      console.log(`✅ 企業「${companyName}」のコンサルタント情報を正常に更新しました: ${consultantsString}`);
+    } else {
+      console.warn(`⚠️ 更新が正常に反映されていない可能性があります`);
+      console.warn(`期待値: "${consultantsString}"`);
+      console.warn(`実際の値: "${verifyResult[0]?.CONSULTANT_NAME || 'NULL'}"`);
+    }
   } catch (error) {
     console.error(`❌ 企業「${companyName}」のコンサルタント情報更新中にエラーが発生しました:`, error);
+    console.error(`エラーの詳細:`, error instanceof Error ? error.message : String(error));
+    console.error(`スタックトレース:`, error instanceof Error ? error.stack : 'N/A');
+    throw error;
+  }
+}
+
+/**
+ * 手動でCONSULTANT_NAME列を更新するテスト関数
+ * @param companyName 対象の企業名
+ * @param consultantNames コンサルタント名のリスト
+ */
+export async function testUpdateCompanyConsultant(companyName: string, consultantNames: string[]): Promise<void> {
+  console.log(`🧪 テスト用CONSULTANT_NAME更新開始`);
+  console.log(`📋 テストパラメータ: companyName="${companyName}", consultantNames=[${consultantNames.join(', ')}]`);
+  
+  try {
+    // まず、該当する企業が存在するか確認
+    console.log(`🔍 企業「${companyName}」の存在確認中...`);
+    const checkCompanyQuery = `SELECT COMPANY_NAME FROM COMPANIES WHERE COMPANY_NAME = ?`;
+    const existingCompanies = await snowflakeClient.executeQuery(checkCompanyQuery, [companyName]);
+    console.log(`📊 企業存在確認結果: ${existingCompanies.length}件見つかりました`);
+    
+    if (existingCompanies.length === 0) {
+      console.warn(`⚠️ 企業「${companyName}」がCOMPANIESテーブルに見つかりません`);
+      // 部分マッチで検索してみる
+      const partialMatchQuery = `SELECT COMPANY_NAME FROM COMPANIES WHERE COMPANY_NAME LIKE ? LIMIT 5`;
+      const partialMatches = await snowflakeClient.executeQuery(partialMatchQuery, [`%${companyName}%`]);
+      console.log(`🔍 部分マッチ検索結果:`, partialMatches);
+      
+      if (partialMatches.length > 0) {
+        console.log(`💡 類似する企業名が見つかりました。最初の企業名を使用します: ${partialMatches[0].COMPANY_NAME}`);
+        companyName = partialMatches[0].COMPANY_NAME;
+      } else {
+        console.error(`❌ 企業「${companyName}」および類似する企業名が見つかりません`);
+        console.error(`❌ CONSULTANT_NAME列の更新をスキップします`);
+        return;
+      }
+    }
+
+    // CONSULTANT_NAME列の存在確認・追加
+    await ensureConsultantNameColumn();
+
+    const consultantsString = consultantNames.join(', ');
+    console.log(`📝 保存するコンサルタント文字列: "${consultantsString}"`);
+
+    const query = `
+      UPDATE COMPANIES
+      SET CONSULTANT_NAME = ?
+      WHERE COMPANY_NAME = ?
+    `;
+    
+    console.log(`🔄 SQLクエリ実行開始: ${query}`);
+    console.log(`📊 バインドパラメータ: ["${consultantsString}", "${companyName}"]`);
+
+    const result = await snowflakeClient.executeQuery(query, [consultantsString, companyName]);
+    console.log(`✅ SQLクエリ実行完了`);
+    console.log(`📈 クエリ結果:`, result);
+    
+    // 更新後の確認
+    const verifyQuery = `SELECT COMPANY_NAME, CONSULTANT_NAME FROM COMPANIES WHERE COMPANY_NAME = ?`;
+    const verifyResult = await snowflakeClient.executeQuery(verifyQuery, [companyName]);
+    console.log(`🔍 更新後の確認結果:`, verifyResult);
+    
+    if (verifyResult.length > 0 && verifyResult[0].CONSULTANT_NAME === consultantsString) {
+      console.log(`✅ 企業「${companyName}」のコンサルタント情報を正常に更新しました: ${consultantsString}`);
+    } else {
+      console.warn(`⚠️ 更新が正常に反映されていない可能性があります`);
+      console.warn(`期待値: "${consultantsString}"`);
+      console.warn(`実際の値: "${verifyResult[0]?.CONSULTANT_NAME || 'NULL'}"`);
+    }
+  } catch (error) {
+    console.error(`❌ テスト更新中にエラーが発生しました:`, error);
+    console.error(`エラーの詳細:`, error instanceof Error ? error.message : String(error));
+    console.error(`スタックトレース:`, error instanceof Error ? error.stack : 'N/A');
     throw error;
   }
 }
