@@ -39,7 +39,8 @@ export async function comprehensiveMatchChallenges(challenges: string[]) {
           BUSINESS_DESCRIPTION,
           CHALLENGES,
           STRENGTHS,
-          OFFICIAL_WEBSITE
+          OFFICIAL_WEBSITE,
+          CONSULTANT_NAME
         FROM COMPANIES
         WHERE COMPANY_NAME IS NOT NULL
           AND BUSINESS_DESCRIPTION IS NOT NULL
@@ -126,6 +127,7 @@ export async function comprehensiveMatchChallenges(challenges: string[]) {
         CHALLENGES,
         STRENGTHS,
         OFFICIAL_WEBSITE,
+        CONSULTANT_NAME,
         multi_challenge_score,
         industry_fit_score,
         comprehensive_support_score,
@@ -134,16 +136,29 @@ export async function comprehensiveMatchChallenges(challenges: string[]) {
         (multi_challenge_score + industry_fit_score + comprehensive_support_score + solution_power_score) as total_comprehensive_score
       FROM comprehensive_matching
       WHERE multi_challenge_score > 0.2  -- 最低でも1つの課題領域に対応
-      ORDER BY total_comprehensive_score DESC, multi_challenge_score DESC
-      LIMIT 5
+      ORDER BY total_comprehensive_score DESC, multi_challenge_score DESC, RANDOM()
+      LIMIT 3
     `;
 
     console.log('総合マッチングクエリ実行中...');
     const results = await snowflakeClient.executeQuery(comprehensiveMatchingQuery);
     console.log(`検索結果: ${results.length}件の総合解決企業が見つかりました`);
+    
+    // デバッグ: 検索結果の詳細を確認
+    if (results.length > 0) {
+      console.log('=== 検索結果詳細 ===');
+      results.forEach((result: any, index: number) => {
+        console.log(`${index + 1}位: ${result.COMPANY_NAME}`);
+        console.log(`  CONSULTANT_NAME: ${result.CONSULTANT_NAME}`);
+        console.log(`  TOTAL_COMPREHENSIVE_SCORE: ${result.TOTAL_COMPREHENSIVE_SCORE}`);
+      });
+    } else {
+      console.log('⚠️ 検索結果が0件です');
+    }
 
-    // 結果を整形
-    const comprehensiveMatches = results.map((row: any, index: number) => ({
+    // 結果を整形（上位5社に絞り込み、多様性を確保）
+    const topResults = results.slice(0, 5);
+    const comprehensiveMatches = topResults.map((row: any, index: number) => ({
       rank: index + 1,
       company_id: row.COMPANY_ID,
       company_name: row.COMPANY_NAME,
@@ -156,6 +171,7 @@ export async function comprehensiveMatchChallenges(challenges: string[]) {
       challenges: row.CHALLENGES,
       strengths: row.STRENGTHS,
       official_website: row.OFFICIAL_WEBSITE,
+      consultant_name: row.CONSULTANT_NAME,
       total_score: row.TOTAL_COMPREHENSIVE_SCORE,
       detailed_scores: {
         multi_challenge_coverage: row.MULTI_CHALLENGE_SCORE,
@@ -175,6 +191,7 @@ export async function comprehensiveMatchChallenges(challenges: string[]) {
     comprehensiveMatches.forEach((match, index) => {
       console.log(`${index + 1}位: ${match.company_name}`);
       console.log(`  総合スコア: ${match.total_score.toFixed(3)}`);
+      console.log(`  CONSULTANT_NAME: ${match.consultant_name}`);
       console.log(`  対応領域: 営業${match.coverage_areas.sales_acquisition ? '○' : '×'} / マーケ${match.coverage_areas.marketing_strategy ? '○' : '×'} / デジタル${match.coverage_areas.digital_performance ? '○' : '×'}`);
     });
 

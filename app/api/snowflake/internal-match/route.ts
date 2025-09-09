@@ -54,7 +54,8 @@ export async function POST(req: NextRequest) {
         PREFECTURE,
         EMPLOYEE_COUNT,
         INCORPORATION_DATE,
-        OFFICIAL_WEBSITE
+        OFFICIAL_WEBSITE,
+        CONSULTANT_NAME
       FROM COMPANIES
       WHERE COMPANY_NAME != '${companyName.replace(/'/g, "''")}'
         AND COMPANY_NAME IS NOT NULL
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
       solutionQuery += ` AND (${keywordConditions})`;
     }
 
-    solutionQuery += ` ORDER BY EMPLOYEE_COUNT DESC LIMIT 10`;
+    solutionQuery += ` ORDER BY EMPLOYEE_COUNT DESC LIMIT 3`;
 
     const solutionCompanies = await snowflakeClient.executeQuery(solutionQuery);
     
@@ -129,6 +130,7 @@ export async function POST(req: NextRequest) {
         region: company.REGION || '未設定',
         prefecture: company.PREFECTURE || '未設定',
         employee_count: company.EMPLOYEE_COUNT || '未設定',
+        consultant_name: company.CONSULTANT_NAME || '',
         match_score: Math.min(score, 1.0),
         match_reason: reasons.join(', '),
         solution_details: `この企業は${reasons.join('、')}の観点で課題解決に貢献できる可能性があります。`,

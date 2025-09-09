@@ -194,7 +194,10 @@ export async function POST(req: NextRequest) {
           companyName: extractedCompanyName,
           originalCompanyName: companyName,
           challenges: challengeResult.challenges,
+          challenge: challengeResult.challenges?.join('; ') || '', // write-resultsで使用される形式
+          excludedSpeakers: '', // この処理では除外話者情報は取得していない
           matches: matchResult.matches || [],
+          comprehensiveMatches: matchResult.matches || [], // write-resultsで使用される形式に合わせて追加
           totalMatches: matchResult.totalMatches || 0,
           sourceUrl: targetRow.url,
           success: true

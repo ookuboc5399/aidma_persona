@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
         FROM ai_matching
         WHERE semantic_similarity > 0.2  -- 最低閾値
         ORDER BY total_match_score DESC
-        LIMIT 5
+        LIMIT 3
       `;
 
       try {

@@ -220,12 +220,19 @@ export async function POST(req: NextRequest) {
         console.log('マッチング処理中...');
         const matchingResults = await findMatchingCompanies(challenges);
 
+        // matchingResultsからmatchesとcomprehensiveMatchesを抽出
+        const allMatches = matchingResults.flatMap((result: any) => result.matches || []);
+        
         processingResults.push({
           companyName: company.companyName,
           columnLetter: company.columnLetter,
           extractionMethod: company.extractionMethod,
           challenges,
+          challenge: challenges?.join('; ') || '', // write-resultsで使用される形式
+          excludedSpeakers: '', // この処理では除外話者情報は取得していない
           matchingResults,
+          matches: allMatches, // write-resultsで使用される形式
+          comprehensiveMatches: allMatches, // write-resultsで使用される形式
           success: true,
           processedAt: new Date().toISOString()
         });
@@ -244,7 +251,11 @@ export async function POST(req: NextRequest) {
           columnLetter: company.columnLetter,
           extractionMethod: company.extractionMethod,
           challenges: [],
+          challenge: '', // write-resultsで使用される形式
+          excludedSpeakers: '', // write-resultsで使用される形式
           matchingResults: [],
+          matches: [], // write-resultsで使用される形式
+          comprehensiveMatches: [], // write-resultsで使用される形式
           success: false,
           error: getErrorMessage(error),
           processedAt: new Date().toISOString()

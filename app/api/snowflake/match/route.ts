@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
         AND COMPANY_NAME IS NOT NULL
         AND BUSINESS_DESCRIPTION IS NOT NULL
       ORDER BY EMPLOYEE_COUNT DESC
-      LIMIT 5
+      LIMIT 3
     `;
 
     const solutionCompanies = await snowflakeClient.executeQuery(solutionCompaniesQuery);

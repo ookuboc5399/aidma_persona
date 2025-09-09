@@ -929,29 +929,30 @@ export default function Home() {
     try {
       console.log('スプレッドシートへの結果書き込み開始');
       
-      // 結果をスプレッドシート用の形式に変換
+      // 結果をスプレッドシート用の形式に変換（新しい形式）
       const results = challengeCompanies.flatMap(company => {
         const excludedSpeakers = company.filterStats?.excludedSpeakers?.join(', ') || '';
-        const topMatch = company.matches?.[0];
+        const challenges = company.challenges || [];
+        const matches = company.matches || company.comprehensiveMatches || [];
 
-        if (!company.challenges || company.challenges.length === 0) {
+        if (challenges.length === 0) {
           return [{
             sheetName: company.sheetName || company.date,
             companyName: company.companyName,
             challenge: '課題が抽出されませんでした',
             excludedSpeakers,
-            matchingCompany: topMatch?.company_name || '',
-            solution: topMatch?.business_description || ''
+            matches: matches,
+            comprehensiveMatches: matches
           }];
         }
 
-        return company.challenges.map((challenge: string) => ({
+        return challenges.map((challenge: string) => ({
           sheetName: company.sheetName || company.date,
           companyName: company.companyName,
           challenge: challenge,
           excludedSpeakers,
-          matchingCompany: topMatch?.company_name || '',
-          solution: topMatch?.business_description || ''
+          matches: matches,
+          comprehensiveMatches: matches
         }));
       });
 
@@ -993,7 +994,7 @@ export default function Home() {
       
       const result = company.challengeResult;
       const excludedSpeakers = result.filterStats?.excludedSpeakers?.join(', ') || '';
-      const topMatch = result.comprehensiveMatches?.[0];
+      const matches = result.comprehensiveMatches || result.matches || [];
 
       let dataToWrite;
 
@@ -1003,8 +1004,8 @@ export default function Home() {
           companyName: company.companyName,
           challenge: '課題が抽出されませんでした',
           excludedSpeakers,
-          matchingCompany: topMatch?.company_name || '',
-          solution: topMatch?.business_description || ''
+          matches: matches,
+          comprehensiveMatches: matches
         }];
       } else {
         dataToWrite = result.challenges.map((challenge: string) => ({
@@ -1012,8 +1013,8 @@ export default function Home() {
           companyName: company.companyName,
           challenge: challenge,
           excludedSpeakers,
-          matchingCompany: topMatch?.company_name || '',
-          solution: topMatch?.business_description || ''
+          matches: matches,
+          comprehensiveMatches: matches
         }));
       }
 
@@ -1350,6 +1351,15 @@ export default function Home() {
                                           <span className="font-semibold ml-2">地域:</span> {match.prefecture || '未設定'}
                                         </p>
                                         <p className="text-sm text-gray-700 mb-2">{match.match_reason}</p>
+                                        
+                                        {/* 解決できる課題の表示 */}
+                                        {match.challenges && (
+                                          <div className="mb-2">
+                                            <p className="text-xs font-semibold text-gray-700 mb-1">解決できる課題:</p>
+                                            <p className="text-xs text-gray-600">{match.challenges}</p>
+                                          </div>
+                                        )}
+                                        
                                         <details className="text-sm">
                                           <summary className="cursor-pointer text-blue-600 hover:text-blue-800">
                                             詳細を見る
@@ -1548,7 +1558,7 @@ export default function Home() {
                       <p className="text-xs font-semibold text-green-800 mb-1">処理完了</p>
                       <p className="text-xs text-green-700">
                         課題: {clCompaniesByDate[selectedClCompanyIndex].challengeResult.totalChallenges}件 | 
-                        解決策: {clCompaniesByDate[selectedClCompanyIndex].challengeResult.selectedCompaniesCount || clCompaniesByDate[selectedClCompanyIndex].challengeResult.totalMatches || 0}件
+                        解決策: {clCompaniesByDate[selectedClCompanyIndex].challengeResult.comprehensiveMatches?.length || clCompaniesByDate[selectedClCompanyIndex].challengeResult.selectedCompaniesCount || clCompaniesByDate[selectedClCompanyIndex].challengeResult.totalMatches || 0}件
                       </p>
                     </div>
                   )}
@@ -1595,7 +1605,7 @@ export default function Home() {
                             課題: {company.challengeResult?.totalChallenges ?? 0}件
                           </p>
                           <p className="text-sm font-semibold text-gray-700">
-                            解決策: {company.challengeResult?.selectedCompaniesCount || company.challengeResult?.totalMatches || 0}件
+                            解決策: {company.challengeResult?.comprehensiveMatches?.length || company.challengeResult?.selectedCompaniesCount || company.challengeResult?.totalMatches || 0}件
                           </p>
                           {company.challengeResult?.filterStats && (
                             <p className="text-xs text-gray-600 mt-1">
@@ -1615,7 +1625,7 @@ export default function Home() {
                       {/* マッチング結果 */}
                       <div>
                         <h4 className="text-lg font-semibold text-slate-700 mb-2">
-                          総合マッチング結果 ({company.challengeResult?.selectedCompaniesCount || 0}社の解決企業)
+                          総合マッチング結果 ({company.challengeResult?.comprehensiveMatches?.length || company.challengeResult?.selectedCompaniesCount || 0}社の解決企業)
                         </h4>
                         <div className="space-y-3">
                           {/* 全課題の表示 */}
@@ -1647,6 +1657,14 @@ export default function Home() {
                                 </div>
                                 <p className="text-sm text-green-700 mb-2">{match.industry}</p>
                                 <p className="text-sm text-gray-600 mb-2">{match.business_description}</p>
+                                
+                                {/* 解決できる課題の表示 */}
+                                {match.challenges && (
+                                  <div className="mb-2">
+                                    <p className="text-xs font-semibold text-gray-700 mb-1">解決できる課題:</p>
+                                    <p className="text-xs text-gray-600">{match.challenges}</p>
+                                  </div>
+                                )}
                                 
                                 {/* 対応領域の表示 */}
                                 {match.coverage_areas && (
@@ -1804,7 +1822,15 @@ export default function Home() {
                                     </div>
                                     <p className="text-sm text-gray-600 mb-2">{match.industry} | {match.region}</p>
                                     <p className="text-sm text-gray-700 mb-2">{match.match_reason}</p>
-                                    <p className="text-sm text-gray-600">{match.solution_details}</p>
+                                    <p className="text-sm text-gray-600 mb-2">{match.solution_details}</p>
+                                    
+                                    {/* 解決できる課題の表示 */}
+                                    {match.challenges && (
+                                      <div className="mb-2">
+                                        <p className="text-xs font-semibold text-gray-700 mb-1">解決できる課題:</p>
+                                        <p className="text-xs text-gray-600">{match.challenges}</p>
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                                 {company.matches.length > 3 && (

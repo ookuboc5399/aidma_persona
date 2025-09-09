@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
       FROM matching_scores
       WHERE total_match_score > 0.3
       ORDER BY total_match_score DESC
-      LIMIT 15
+      LIMIT 3
     `;
 
     console.log('Executing Snowflake matching query...');

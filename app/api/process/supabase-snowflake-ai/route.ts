@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
       FROM ai_matching
       WHERE total_match_score > 0.4
       ORDER BY total_match_score DESC
-      LIMIT 10
+      LIMIT 3
     `;
 
     const snowflakeResults = await snowflakeClient.executeQuery(aiMatchingQuery);

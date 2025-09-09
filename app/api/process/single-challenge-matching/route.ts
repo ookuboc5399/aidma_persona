@@ -190,26 +190,62 @@ async function findMatchingCompanies(challenges: string[]): Promise<any[]> {
       console.log(`課題${index + 1}: ${challenge}`);
     });
 
-    console.log('🔄 直接関数呼び出しでマッチング処理実行');
+    console.log('🔄 Snowflake AI マッチング処理実行');
     
-    const result = await comprehensiveMatchChallenges(challenges);
-    console.log(`✅ 総合マッチング結果: ${result.totalMatches}社が選出されました`);
+    // Snowflake AI マッチングを使用
+    const aiMatchResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/snowflake/ai-match`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ challenges })
+    });
+
+    if (!aiMatchResponse.ok) {
+      throw new Error('Snowflake AI matching failed');
+    }
+
+    const aiResult = await aiMatchResponse.json();
+    console.log(`✅ Snowflake AI マッチング結果: ${aiResult.totalMatches}社が選出されました（上位3社に制限）`);
+    
+    // AI結果を総合マッチング形式に変換（上位3社に制限）
+    const limitedMatches = aiResult.matches.slice(0, 3);
+    const result = {
+      success: true,
+      inputChallenges: challenges,
+      totalMatches: limitedMatches.length,
+      comprehensiveMatches: limitedMatches,
+      matchingCriteria: {
+        semantic_similarity: 'セマンティック類似度',
+        industry_bonus: '業種ボーナス',
+        solution_bonus: 'ソリューションボーナス'
+      },
+      dataSource: 'snowflake-ai-cortex',
+      matchingMethod: 'semantic-similarity + industry-bonus + solution-bonus'
+    };
     
     if (result.comprehensiveMatches && result.comprehensiveMatches.length > 0) {
       console.log('選出企業詳細:');
       result.comprehensiveMatches.forEach((match: any, index: number) => {
-        console.log(`  ${index + 1}位: ${match.company_name} (総合スコア: ${match.total_score.toFixed(3)})`);
-        console.log(`    対応領域: 営業${match.coverage_areas.sales_acquisition ? '○' : '×'} / マーケ${match.coverage_areas.marketing_strategy ? '○' : '×'} / デジタル${match.coverage_areas.digital_performance ? '○' : '×'}`);
+        console.log(`  ${index + 1}位: ${match.company_name} (AIスコア: ${match.match_score?.toFixed(3) || 'N/A'})`);
+        console.log(`    セマンティック類似度: ${match.semantic_similarity?.toFixed(3) || 'N/A'}`);
+        console.log(`    業種ボーナス: ${match.industry_bonus?.toFixed(3) || 'N/A'}`);
+        console.log(`    ソリューション ボーナス: ${match.solution_bonus?.toFixed(3) || 'N/A'}`);
       });
     }
 
     // 総合マッチング結果を従来の形式に変換
-    return [{
+    const convertedResult = [{
       challenges: challenges,
       matches: result.comprehensiveMatches || [],
       matchingMethod: 'comprehensive-matching',
       totalScore: result.comprehensiveMatches?.reduce((sum: number, match: any) => sum + match.total_score, 0) || 0
     }];
+    
+    console.log('=== findMatchingCompanies結果デバッグ ===');
+    console.log(`result.comprehensiveMatches長さ: ${result.comprehensiveMatches?.length || 0}`);
+    console.log(`convertedResult[0].matches長さ: ${convertedResult[0].matches.length}`);
+    console.log(`convertedResult:`, convertedResult);
+    
+    return convertedResult;
 
   } catch (matchingError) {
     console.error(`🚨 総合マッチング処理エラー:`, matchingError);
@@ -298,8 +334,8 @@ export async function POST(req: NextRequest) {
         console.log(`✅ 企業「${companyName}」の除外話者情報をSnowflakeに保存しました: ${filterResult.excludedSpeakers.join(', ')}`);
       } catch (error) {
         console.error(`❌ 企業「${companyName}」の除外話者情報保存中にエラーが発生しました:`, error);
-        console.error(`エラーの詳細:`, error.message);
-        console.error(`スタックトレース:`, error.stack);
+        console.error(`エラーの詳細:`, error instanceof Error ? error.message : String(error));
+        console.error(`スタックトレース:`, error instanceof Error ? error.stack : 'N/A');
         // エラーが発生しても処理は継続
       }
     } else {
@@ -319,6 +355,12 @@ export async function POST(req: NextRequest) {
     // 総合マッチング結果を取得
     const comprehensiveResult = matchingResults[0]; // 総合マッチング結果（単一結果）
     const selectedCompanies = comprehensiveResult?.matches || [];
+    
+    console.log('=== マッチング結果デバッグ ===');
+    console.log(`matchingResults長さ: ${matchingResults.length}`);
+    console.log(`comprehensiveResult:`, comprehensiveResult);
+    console.log(`selectedCompanies長さ: ${selectedCompanies.length}`);
+    console.log(`selectedCompanies:`, selectedCompanies);
 
     const result = {
       success: true,
@@ -327,6 +369,7 @@ export async function POST(req: NextRequest) {
       extractionMethod: extractionMethod || '不明',
       challenges,
       comprehensiveMatches: selectedCompanies,
+      matches: selectedCompanies, // write-resultsで使用される形式に合わせて追加
       matchingMethod: 'comprehensive-multi-challenge-evaluation',
       totalChallenges: challenges.length,
       selectedCompaniesCount: selectedCompanies.length,
