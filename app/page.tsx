@@ -1353,10 +1353,21 @@ export default function Home() {
                                         <p className="text-sm text-gray-700 mb-2">{match.match_reason}</p>
                                         
                                         {/* 解決できる課題の表示 */}
-                                        {match.challenges && (
+                                        {match.challenge && (
                                           <div className="mb-2">
                                             <p className="text-xs font-semibold text-gray-700 mb-1">解決できる課題:</p>
-                                            <p className="text-xs text-gray-600">{match.challenges}</p>
+                                            <div className="text-xs text-gray-600">
+                                              {(() => {
+                                                // 課題のタイトル部分を抽出（**課題名**: の形式から）
+                                                const challengeText = match.challenge;
+                                                const titleMatch = challengeText.match(/\*\*(.*?)\*\*:/);
+                                                if (titleMatch) {
+                                                  return <p>・{titleMatch[1]}</p>;
+                                                }
+                                                // マッチしない場合は最初の部分を表示
+                                                return <p>・{challengeText.split(':')[0] || challengeText}</p>;
+                                              })()}
+                                            </div>
                                           </div>
                                         )}
                                         
@@ -1659,10 +1670,21 @@ export default function Home() {
                                 <p className="text-sm text-gray-600 mb-2">{match.business_description}</p>
                                 
                                 {/* 解決できる課題の表示 */}
-                                {match.challenges && (
+                                {match.challenge && (
                                   <div className="mb-2">
                                     <p className="text-xs font-semibold text-gray-700 mb-1">解決できる課題:</p>
-                                    <p className="text-xs text-gray-600">{match.challenges}</p>
+                                    <div className="text-xs text-gray-600">
+                                      {(() => {
+                                        // 課題のタイトル部分を抽出（**課題名**: の形式から）
+                                        const challengeText = match.challenge;
+                                        const titleMatch = challengeText.match(/\*\*(.*?)\*\*:/);
+                                        if (titleMatch) {
+                                          return <p>・{titleMatch[1]}</p>;
+                                        }
+                                        // マッチしない場合は最初の部分を表示
+                                        return <p>・{challengeText.split(':')[0] || challengeText}</p>;
+                                      })()}
+                                    </div>
                                   </div>
                                 )}
                                 
@@ -1825,10 +1847,21 @@ export default function Home() {
                                     <p className="text-sm text-gray-600 mb-2">{match.solution_details}</p>
                                     
                                     {/* 解決できる課題の表示 */}
-                                    {match.challenges && (
+                                    {match.challenge && (
                                       <div className="mb-2">
                                         <p className="text-xs font-semibold text-gray-700 mb-1">解決できる課題:</p>
-                                        <p className="text-xs text-gray-600">{match.challenges}</p>
+                                        <div className="text-xs text-gray-600">
+                                          {(() => {
+                                            // 課題のタイトル部分を抽出（**課題名**: の形式から）
+                                            const challengeText = match.challenge;
+                                            const titleMatch = challengeText.match(/\*\*(.*?)\*\*:/);
+                                            if (titleMatch) {
+                                              return <p>・{titleMatch[1]}</p>;
+                                            }
+                                            // マッチしない場合は最初の部分を表示
+                                            return <p>・{challengeText.split(':')[0] || challengeText}</p>;
+                                          })()}
+                                        </div>
                                       </div>
                                     )}
                                   </div>
