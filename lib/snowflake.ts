@@ -459,4 +459,4 @@ export async function testUpdateCompanyConsultant(companyName: string, consultan
   }
 }
 
-export { snowflakeClient };
+export { snowflakeClient, SnowflakeClient };
