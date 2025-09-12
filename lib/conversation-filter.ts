@@ -455,6 +455,7 @@ export const DEFAULT_EXCLUDE_SPEAKERS = [
   '川合健太郎',
   '栗林ウブ',
   '髙橋拓人',
+  '榎本夏生',
 ];
 
 /**

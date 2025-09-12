@@ -173,12 +173,63 @@ export default function Home() {
   const [clDateError, setClDateError] = useState('');
   const [selectedClCompanyIndex, setSelectedClCompanyIndex] = useState<number | null>(null);
 
+  // ペルソナ抽出機能用の状態
+  const [isPersonaProcessing, setIsPersonaProcessing] = useState(false);
+  const [personaResults, setPersonaResults] = useState<any>(null);
+  const [personaError, setPersonaError] = useState('');
+
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const challengeResultsRef = useRef<HTMLDivElement | null>(null);
   const dateCompaniesRef = useRef<HTMLDivElement | null>(null);
 
   const handleReadSheet = async () => {
     await handleReadSheetInternal();
+  };
+
+  // ペルソナ強化版処理を実行
+  const handlePersonaEnhancedProcessing = async (company: CompanyByDate) => {
+    if (!company.conversationData) {
+      setPersonaError('会話データがありません');
+      return;
+    }
+
+    setIsPersonaProcessing(true);
+    setPersonaError('');
+    setPersonaResults(null);
+
+    try {
+      console.log('ペルソナ強化版処理開始:', company.companyName);
+      
+      const response = await fetch('/api/process/persona-enhanced', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          companyName: company.companyName,
+          conversationData: company.conversationData,
+          sourceUrl: company.sourceUrl,
+          originalCompanyName: company.originalTitle,
+          serviceName: '未指定', // 必要に応じて入力フィールドを追加
+          extractCompanyInfo: true
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'ペルソナ強化版処理に失敗しました');
+      }
+
+      const result = await response.json();
+      setPersonaResults(result);
+      console.log('ペルソナ強化版処理完了:', result);
+      
+    } catch (error) {
+      console.error('ペルソナ強化版処理エラー:', error);
+      setPersonaError(toMessage(error));
+    } finally {
+      setIsPersonaProcessing(false);
+    }
   };
 
   // 選択した日付の全企業を一括でデータベースに保存
@@ -1160,14 +1211,14 @@ export default function Home() {
                     <button
                       onClick={() => {
                         if (selectedCompanyIndex !== null) {
-                          handleProcessSingleCompany(companiesByDate[selectedCompanyIndex]);
+                          handlePersonaEnhancedProcessing(companiesByDate[selectedCompanyIndex]);
                         }
                       }}
-                      disabled={selectedCompanyIndex === null || companiesByDate[selectedCompanyIndex]?.isProcessing || companiesByDate[selectedCompanyIndex]?.isProcessed}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition"
+                      disabled={selectedCompanyIndex === null || isPersonaProcessing}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 transition"
+                      title="ペルソナ抽出 + ターゲット検索（新機能）"
                     >
-                      {selectedCompanyIndex !== null && companiesByDate[selectedCompanyIndex]?.isProcessing ? '処理中...' : 
-                       selectedCompanyIndex !== null && companiesByDate[selectedCompanyIndex]?.isProcessed ? '処理完了' : 'データベースに保存'}
+                      {isPersonaProcessing ? 'ペルソナ処理中...' : 'ペルソナ抽出'}
                     </button>
                     <button
                       onClick={handleBulkRegisterByDate}
@@ -1880,6 +1931,254 @@ export default function Home() {
                   );
                 })}
               </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ペルソナ抽出結果表示セクション */}
+      {(personaResults || personaError) && (
+        <section className="relative py-10">
+          <div className="absolute inset-0 bg-center bg-cover" style={{ backgroundImage: 'url(/top1.png)' }}></div>
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0b1020] via-[#0b1020]/80 to-[#0b1020]"></div>
+          <div className="relative container mx-auto px-4">
+            <div className="bg-white/95 text-slate-900 rounded-xl shadow-2xl p-6 md:p-8 backdrop-blur-sm">
+              <h2 className="text-4xl font-bold [font-family:var(--font-serif-jp)] text-slate-900 tracking-wide mb-6">
+                ペルソナ抽出結果
+              </h2>
+              
+              {personaError && (
+                <div className="bg-red-50 p-4 rounded border border-red-200 mb-6">
+                  <p className="text-red-700">エラー: {personaError}</p>
+                </div>
+              )}
+
+              {personaResults && (
+                <div className="space-y-6">
+                  {/* 処理ステップ */}
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold mb-3">処理ステップ</h3>
+                    <div className="space-y-2">
+                      {personaResults.results?.steps?.map((step: any, index: number) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <span className={`px-2 py-1 rounded text-sm ${
+                            step.status === 'success' ? 'bg-green-100 text-green-700' :
+                            step.status === 'error' ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {step.status === 'success' ? '✓' : step.status === 'error' ? '✗' : '○'}
+                          </span>
+                          <span className="text-sm">{step.step}: {step.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 抽出されたペルソナ */}
+                  {personaResults.results?.personaResults?.extractedPersonas && (
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <h3 className="text-lg font-semibold mb-3">抽出された{personaResults.results?.companyName || '企業'}のペルソナ</h3>
+                      <div className="space-y-4">
+                        {personaResults.results.personaResults.extractedPersonas.targets?.map((target: any, targetIndex: number) => (
+                          <div key={targetIndex} className="bg-white p-4 rounded border">
+                            <h4 className="font-semibold text-blue-800 mb-2">
+                              業種: {target.industry_normalized} (信頼度: {target.confidence_industry})
+                            </h4>
+                            <div className="space-y-2">
+                              {target.personas?.map((persona: any, personaIndex: number) => (
+                                <div key={personaIndex} className="bg-gray-50 p-3 rounded">
+                                  <p className="font-medium text-gray-800">{persona.persona_mapped || persona.persona_statement_raw}</p>
+                                  <p className="text-sm text-gray-600">信頼度: {persona.confidence}</p>
+                                  {persona.evidence_snippets && persona.evidence_snippets.length > 0 && (
+                                    <div className="mt-2">
+                                      <p className="text-xs font-semibold text-gray-700">根拠:</p>
+                                      {persona.evidence_snippets.map((snippet: string, snippetIndex: number) => (
+                                        <p key={snippetIndex} className="text-xs text-gray-600">・{snippet}</p>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ターゲット検索結果 */}
+                  {personaResults.results?.targetSearchResults?.results && (
+                    <div className="bg-green-50 p-4 rounded-lg">
+                      <h3 className="text-lg font-semibold mb-3">
+                        ターゲット検索結果 (総マッチ数: {personaResults.results.targetSearchResults.results.summary?.totalMatches || 0}件)
+                      </h3>
+                      <div className="space-y-4">
+                        {personaResults.results.targetSearchResults.results.searchResults?.map((searchResult: any, searchIndex: number) => (
+                          <div key={searchIndex} className="bg-white p-4 rounded border">
+                            <h4 className="font-semibold text-green-800 mb-2">
+                              業種: {searchResult.industry} (マッチ数: {searchResult.totalMatches}件)
+                            </h4>
+                            <div className="space-y-3">
+                              {searchResult.personas?.map((persona: any, personaIndex: number) => (
+                                <div key={personaIndex} className="bg-gray-50 p-3 rounded">
+                                  <p className="font-medium text-gray-800">{persona.personaMapped || persona.personaStatement}</p>
+                                  <p className="text-sm text-gray-600">マッチ数: {persona.matchCount}件</p>
+                                  {persona.symptomKeywords && persona.symptomKeywords.length > 0 && (
+                                    <div className="mt-2">
+                                      <p className="text-xs font-semibold text-gray-700">検索キーワード:</p>
+                                      <div className="flex flex-wrap gap-1 mt-1">
+                                        {persona.symptomKeywords.map((keyword: string, keywordIndex: number) => (
+                                          <span key={keywordIndex} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
+                                            {keyword}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {persona.matches && persona.matches.length > 0 && (
+                                    <div className="mt-2">
+                                      <p className="text-xs font-semibold text-gray-700 mb-2">マッチした企業例:</p>
+                                      <div className="overflow-x-auto">
+                                        <table className="min-w-full text-xs border-collapse border border-gray-300">
+                                          <thead>
+                                            <tr className="bg-gray-100">
+                                              <th className="border border-gray-300 px-2 py-1 text-left">商材</th>
+                                              <th className="border border-gray-300 px-2 py-1 text-left">部署</th>
+                                              <th className="border border-gray-300 px-2 py-1 text-left">規模</th>
+                                              <th className="border border-gray-300 px-2 py-1 text-left">課題</th>
+                                              <th className="border border-gray-300 px-2 py-1 text-left">症状</th>
+                                              <th className="border border-gray-300 px-2 py-1 text-left">提案施策</th>
+                                              <th className="border border-gray-300 px-2 py-1 text-left">KPI</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {persona.matches.slice(0, 5).map((match: any, matchIndex: number) => (
+                                              <tr key={matchIndex} className={matchIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                <td className="border border-gray-300 px-2 py-1">{match.BUSINESS_TAG || '-'}</td>
+                                                <td className="border border-gray-300 px-2 py-1">{match.DEPARTMENT || '-'}</td>
+                                                <td className="border border-gray-300 px-2 py-1">{match.SIZE_BAND || '-'}</td>
+                                                <td className="border border-gray-300 px-2 py-1">{match.CHALLENGE_NAME || '-'}</td>
+                                                <td className="border border-gray-300 px-2 py-1 max-w-xs truncate" title={match.SYMPTOM || ''}>
+                                                  {match.SYMPTOM ? (match.SYMPTOM.length > 50 ? match.SYMPTOM.substring(0, 50) + '...' : match.SYMPTOM) : '-'}
+                                                </td>
+                                                <td className="border border-gray-300 px-2 py-1 max-w-xs truncate" title={match.RECOMMENDED_OUTBOUND_PLAY || ''}>
+                                                  {match.RECOMMENDED_OUTBOUND_PLAY ? (match.RECOMMENDED_OUTBOUND_PLAY.length > 50 ? match.RECOMMENDED_OUTBOUND_PLAY.substring(0, 50) + '...' : match.RECOMMENDED_OUTBOUND_PLAY) : '-'}
+                                                </td>
+                                                <td className="border border-gray-300 px-2 py-1 max-w-xs truncate" title={match.PRIMARY_KPI || ''}>
+                                                  {match.PRIMARY_KPI ? (match.PRIMARY_KPI.length > 30 ? match.PRIMARY_KPI.substring(0, 30) + '...' : match.PRIMARY_KPI) : '-'}
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                      {persona.matches.length > 5 && (
+                                        <p className="text-xs text-gray-500 mt-1">
+                                          他 {persona.matches.length - 5} 件のマッチがあります
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI推論によるターゲット組織提案 */}
+                  {personaResults.results?.targetSearchResults?.results?.searchResults?.some((result: any) => 
+                    result.personas?.some((persona: any) => persona.targetOrganizations)
+                  ) && (
+                    <div className="bg-yellow-50 p-4 rounded-lg">
+                      <h3 className="text-lg font-semibold mb-3">AI推論によるターゲット組織提案</h3>
+                      <div className="space-y-4">
+                        {personaResults.results.targetSearchResults.results.searchResults?.map((searchResult: any, searchIndex: number) => (
+                          searchResult.personas?.map((persona: any, personaIndex: number) => (
+                            persona.targetOrganizations && persona.targetOrganizations.length > 0 && (
+                              <div key={`${searchIndex}-${personaIndex}`} className="bg-white p-4 rounded border">
+                                <h4 className="font-semibold text-yellow-800 mb-2">
+                                  {persona.personaMapped || persona.personaStatement}
+                                </h4>
+                                <div className="overflow-x-auto">
+                                  <table className="min-w-full text-xs border-collapse border border-gray-300">
+                                    <thead>
+                                      <tr className="bg-yellow-100">
+                                        <th className="border border-gray-300 px-2 py-1 text-left">カテゴリ</th>
+                                        <th className="border border-gray-300 px-2 py-1 text-left">組織名</th>
+                                        <th className="border border-gray-300 px-2 py-1 text-left">理由</th>
+                                        <th className="border border-gray-300 px-2 py-1 text-left">商材</th>
+                                        <th className="border border-gray-300 px-2 py-1 text-left">部署</th>
+                                        <th className="border border-gray-300 px-2 py-1 text-left">規模</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {persona.targetOrganizations.map((org: any, orgIndex: number) => (
+                                        org.organizations?.map((organization: any, orgDetailIndex: number) => (
+                                          <tr key={`${orgIndex}-${orgDetailIndex}`} className={orgDetailIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                            <td className="border border-gray-300 px-2 py-1">{org.category || '-'}</td>
+                                            <td className="border border-gray-300 px-2 py-1 font-medium">{organization.name || '-'}</td>
+                                            <td className="border border-gray-300 px-2 py-1 max-w-xs truncate" title={organization.reason || ''}>
+                                              {organization.reason ? (organization.reason.length > 50 ? organization.reason.substring(0, 50) + '...' : organization.reason) : '-'}
+                                            </td>
+                                            <td className="border border-gray-300 px-2 py-1">{org.businessTag || '-'}</td>
+                                            <td className="border border-gray-300 px-2 py-1">{org.department || '-'}</td>
+                                            <td className="border border-gray-300 px-2 py-1">{org.sizeBand || '-'}</td>
+                                          </tr>
+                                        ))
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )
+                          ))
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ターゲット提案書 */}
+                  {personaResults.results?.proposalResults?.proposal && (
+                    <div className="bg-purple-50 p-4 rounded-lg">
+                      <h3 className="text-lg font-semibold mb-3">ターゲット提案書</h3>
+                      <div className="bg-white p-4 rounded border">
+                        <div className="prose max-w-none">
+                          <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans">
+                            {personaResults.results.proposalResults.proposal}
+                          </pre>
+                        </div>
+                      </div>
+                      
+                      {/* マッチ統計情報 */}
+                      {personaResults.results.proposalResults.matchStatistics && (
+                        <div className="mt-4 bg-gray-50 p-3 rounded">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">分析統計</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                            <div>
+                              <p className="font-medium text-gray-600">総マッチ数: {personaResults.results.proposalResults.matchStatistics.totalMatches}件</p>
+                              <p className="font-medium text-gray-600">トップ業種: {personaResults.results.proposalResults.matchStatistics.topIndustries?.join(', ') || 'なし'}</p>
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-600">主要症状: {personaResults.results.proposalResults.matchStatistics.topSymptoms?.slice(0, 3).join(', ') || 'なし'}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 生データ（デバッグ用） */}
+                  <details className="bg-gray-50 p-4 rounded-lg">
+                    <summary className="cursor-pointer font-semibold">生データ（デバッグ用）</summary>
+                    <pre className="mt-2 text-xs overflow-auto bg-white p-2 rounded border">
+                      {JSON.stringify(personaResults, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+              )}
             </div>
           </div>
         </section>

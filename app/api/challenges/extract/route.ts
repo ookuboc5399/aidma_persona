@@ -238,7 +238,16 @@ ${chunks.length > 1 ? '注意：これは会話データの一部分です。断
             throw new Error(`Failed to extract challenges from chunk ${chunkIndex + 1}`);
           }
 
-          const parsedData = JSON.parse(extractedContent);
+          // マークダウンのコードブロックを除去
+          let cleanedContent = extractedContent;
+          if (cleanedContent.includes('```json')) {
+            cleanedContent = cleanedContent.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
+          }
+          if (cleanedContent.includes('```')) {
+            cleanedContent = cleanedContent.replace(/```\s*/g, '');
+          }
+
+          const parsedData = JSON.parse(cleanedContent);
 
           // 抽出された課題をログに表示
           console.log(`=== ChatGPT Challenge Extraction (Chunk ${chunkIndex + 1}/${chunks.length}) ===`);

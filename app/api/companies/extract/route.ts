@@ -111,10 +111,21 @@ export async function POST(req: NextRequest) {
                   throw new Error('Failed to extract company information');
                 }
 
+                // マークダウンのコードブロックを除去
+                let cleanedContent = extractedContent;
+                if (cleanedContent.includes('```json')) {
+                  cleanedContent = cleanedContent.replace(/```json\s*/g, '').replace(/```\s*$/g, '');
+                }
+                if (cleanedContent.includes('```')) {
+                  cleanedContent = cleanedContent.replace(/```\s*/g, '');
+                }
+
                 let extractedData;
                 try {
-                  extractedData = JSON.parse(extractedContent);
+                  extractedData = JSON.parse(cleanedContent);
                 } catch (error) {
+                  console.error('JSONパースエラー:', error);
+                  console.error('パースしようとした内容:', cleanedContent);
                   throw new Error('Failed to parse extracted company data');
                 }
 
