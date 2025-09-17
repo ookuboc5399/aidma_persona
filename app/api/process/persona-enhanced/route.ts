@@ -235,7 +235,8 @@ export async function POST(req: NextRequest) {
             extractedPersonas: results.personaResults.extractedPersonas,
             targetSearchResults: results.targetSearchResults.results,
             companyName,
-            serviceName: serviceName || results.companyExtraction?.companyInfo?.business_description || '未指定'
+            serviceName: serviceName || results.companyExtraction?.companyInfo?.business_description || '未指定',
+            companyInfo: results.companyExtraction?.companyInfo || null
           }),
         });
 

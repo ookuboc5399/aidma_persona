@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import OpenAI from 'openai';
 import { searchPersonasBySymptom, searchPersonasAdvanced, getAllPersonas, getPersonaTables, getTableStructure } from '../../../../lib/snowflake-persona';
 
 export async function POST(req: NextRequest) {
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
 
         // AI推論による段階的検索を実行
         console.log('=== AI推論による段階的検索開始 ===');
-        const aiInferredConditions = await inferSearchConditions(target, companyName);
+        const aiInferredConditions = await inferSearchConditions(target, companyName, extractedPersonas);
         console.log('AI推論条件:', aiInferredConditions);
 
         // 段階的検索を実行
@@ -54,8 +55,9 @@ export async function POST(req: NextRequest) {
             aiInferredConditions: aiInferredConditions,
             matches: stagedSearchResults,
             matchCount: stagedSearchResults.length,
-            description: 'AI推論による段階的検索結果',
-            targetOrganizations: aiInferredConditions.targetOrganizations
+            description: `AI推論による段階的検索結果（提案業種: ${aiInferredConditions.aiProposedIndustries?.join(', ') || 'なし'}）`,
+            targetOrganizations: aiInferredConditions.targetOrganizations,
+            aiProposedIndustries: aiInferredConditions.aiProposedIndustries
           });
           targetResult.totalMatches += stagedSearchResults.length;
         }
@@ -361,133 +363,682 @@ export async function GET(req: NextRequest) {
 /**
  * AIが推論した検索条件を生成
  */
-async function inferSearchConditions(target: any, companyName: string): Promise<any> {
-  // 業種から推論される商材・部署・規模帯
-  const industry = target.industry_normalized;
+async function inferSearchConditions(target: any, companyName: string, extractedPersonas: any): Promise<any> {
+  // AIが企業のペルソナを分析して幅広い業種を提案
+  const aiProposedIndustries = await analyzePersonaForIndustries(extractedPersonas, companyName);
+  console.log('AI提案業種:', aiProposedIndustries);
   
   // 企業の強み・特徴からターゲット先を推論
   const targetInferences = inferTargetOrganizations(target);
   
-  // 業種に基づく推論ロジック
-  const businessTags = inferBusinessTag(industry);
+  // AI提案業種からデータベースに既存のbusiness_tagを検索（最適化版）
+  const matchingBusinessTags = await findMatchingBusinessTags(aiProposedIndustries, extractedPersonas);
+  console.log('マッチした既存business_tag:', matchingBusinessTags);
+  
   const inferredConditions = {
-    businessTags: businessTags, // 複数のbusiness_tagを配列で返す
-    businessTag: businessTags[0], // 最初のbusiness_tag（後方互換性のため）
-    department: inferDepartment(industry),
-    sizeBand: inferSizeBand(industry),
+    businessTags: matchingBusinessTags, // データベースに既存のbusiness_tagのみ
+    businessTag: matchingBusinessTags[0], // 最初のbusiness_tag（後方互換性のため）
+    department: inferDepartment(aiProposedIndustries[0] || target.industry_normalized),
+    sizeBand: inferSizeBand(aiProposedIndustries[0] || target.industry_normalized),
     symptoms: target.personas?.map((p: any) => p.persona_mapped || p.persona_statement_raw) || [],
-    targetOrganizations: targetInferences
+    targetOrganizations: targetInferences,
+    aiProposedIndustries: aiProposedIndustries // AI提案業種を追加
   };
   
   return inferredConditions;
 }
 
 /**
- * データベースのbusiness_tagマッピング（実際のデータベースに基づく）
+ * 実際のデータベースのbusiness_tagを読み込む関数
  */
-const DATABASE_BUSINESS_TAGS = {
-  // 福祉・介護関連
-  '福祉・介護': [
-    '介護サービス計画(ケアプラン)作成', '介護タクシー運行', '介護リフォーム(バリアフリーリフォーム)',
-    '介護予防', '介護事業コンサルティング', '介護人材派遣', '介護人材紹介', '介護人材育成',
-    '介護保険販売', '介護士派遣', '介護士紹介', '介護支援ソフトウェア開発', '介護施設運営',
-    '介護施設開業支援', '介護用品レンタル・リース', '介護用品卸売', '介護用品製造',
-    '介護用品販売', '介護移送サービス提供', 'サービス付き高齢者住宅運営',
-    '障害者支援施設運営', '障害者就労支援', '障害者雇用支援', '社会福祉法人運営'
-  ],
+async function loadActualDatabaseBusinessTags(): Promise<string[]> {
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    
+    const filePath = path.join(process.cwd(), 'business_tags_unique.txt');
+    const fileContent = fs.readFileSync(filePath, 'utf-8');
+    
+    // ファイルの内容を行ごとに分割し、空行を除去
+    const tags = fileContent
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+    
+    return tags;
+  } catch (error) {
+    console.error('business_tags_unique.txtの読み込みエラー:', error);
+    // フォールバック用の基本的なタグを返す
+    return [
+      'システム開発', 'ソフトウェア開発', 'Webアプリケーション開発', 'モバイルアプリ開発',
+      '介護施設運営', '障害者支援施設運営', '社会福祉法人運営', '福祉システム開発',
+      'クリニック(診療所)運営', '病院運営', '医療機器販売', '介護施設運営',
+      '不動産任意売却', '不動産情報サイト運営', 'アパート賃貸', 'マンション賃貸'
+    ];
+  }
+}
+
+/**
+ * 企業のペルソナに基づいて関連するbusiness_tagを事前にフィルタリング（RAG版）
+ */
+async function filterRelevantBusinessTags(extractedPersonas: any): Promise<string[]> {
+  // RAGベースでデータベースのbusiness_tagから関連するものを直接選択
+  const relevantTags = await selectRelevantBusinessTagsWithRAG(extractedPersonas);
+  console.log(`RAG選択による関連business_tag: ${relevantTags.length}件`);
+  return relevantTags;
+}
+
+/**
+ * RAGベースでデータベースのbusiness_tagから関連するものを選択
+ */
+async function selectRelevantBusinessTagsWithRAG(extractedPersonas: any): Promise<string[]> {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  // データベースのbusiness_tagを取得
+  const allBusinessTags = await loadActualDatabaseBusinessTags();
   
-  // 医療・福祉関連
-  '医療・福祉': [
-    'クリニック(診療所)運営', '病院運営', '医療機器卸売', '医療機器販売', '医療機器製造',
-    '医療機器レンタル・リース', '医療ソフトウェア開発', '医療情報システム開発',
-    '医療コンサルティング', '医療人材派遣', '医療人材紹介', '医療保険販売',
-    '医療施設運営', '医療施設開業支援', '医療移送サービス提供', '在宅医療サービス提供',
-    '訪問看護サービス提供', '訪問介護サービス提供', 'デイサービス運営', 'デイケア運営'
-  ],
+  // AIを使って最適なターゲット先のbusiness_tagを選択
+  const sampleSize = Math.min(200, allBusinessTags.length);
+  const sampleTags = await selectOptimalBusinessTagsWithAI(extractedPersonas, allBusinessTags, sampleSize);
   
-  // 不動産関連
-  '不動産': [
-    'アパート賃貸', 'エコ住宅建設', 'オフィス(事務所)賃貸', 'テナント賃貸', 'ビル賃貸',
-    'マンション賃貸', '不動産任意売却', '不動産再生', '不動産売却', '不動産情報サイト運営',
-    '不動産担保ローン販売', '不動産査定', '不動産業向けソフトウェア開発', '不動産登記手続代行',
-    '不動産競売代行', '不動産買取', '不動産運用', '不動産鑑定', '中古不動産販売',
-    '賃貸管理', '賃貸仲介', '売買仲介', '不動産投資', '不動産開発'
-  ],
+  // ペルソナからテキストを抽出
+  const personaTexts = extractPersonaTexts(extractedPersonas);
   
-  // IT・システム関連
-  'IT・システム': [
-    '3次元測量システム開発', 'ARアプリ開発', 'CAD・CAM・CAE用ソフトウェア開発',
-    'DTP用ソフトウェア開発', 'ECサイト管理システム運営', 'ERPシステム開発',
-    'FAシステム開発', 'IP監視カメラシステム販売', 'IT資格取得支援', 'MRアプリ開発',
-    'システム開発', 'ソフトウェア開発', 'Webサイト制作', 'Webアプリケーション開発',
-    'モバイルアプリ開発', 'クラウドサービス提供', 'ITコンサルティング', 'IT人材派遣',
-    'IT人材紹介', 'IT研修', 'IT資格取得支援', 'IT資格取得支援', 'IT資格取得支援'
-  ],
+  const prompt = `あなたは営業戦略コンサルタントです。企業のペルソナ（解決できる課題）を分析して、提供された最適化されたbusiness_tagの中から、最も営業ターゲットとして適切なものを最終選択してください。
+
+【企業のペルソナ情報】
+${personaTexts}
+
+【AI事前選択されたbusiness_tag（最適化済み）】
+${sampleTags.join(', ')}
+
+【重要】以下の条件を満たすbusiness_tagを最終選択してください：
+1. ペルソナの内容と最も関連性が高い
+2. 営業ターゲットとして実現可能性が高い
+3. 10-15個程度に絞り込む
+4. 優先度の高いものから順番に選択
+
+選択したbusiness_tagを配列形式で出力してください。
+
+例: ["決済代行", "ECサイト運営", "システム開発", "Webアプリケーション開発"]`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "あなたはデータベース検索の専門家です。提供されたデータベースのbusiness_tagの中から、企業のペルソナに関連するものを選択してください。"
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 500,
+    });
+
+    const response = completion.choices[0]?.message?.content;
+    if (!response) {
+      return getFallbackBusinessTags(allBusinessTags);
+    }
+
+    // JSON配列をパース
+    try {
+      const selectedTags = JSON.parse(response);
+      if (Array.isArray(selectedTags)) {
+        // 選択されたタグが実際にデータベースに存在するかチェック
+        const validTags = selectedTags.filter(tag => allBusinessTags.includes(tag));
+        console.log(`RAG選択結果: ${validTags.length}件 / 提案${selectedTags.length}件`);
+        return validTags.length > 0 ? validTags : getFallbackBusinessTags(allBusinessTags);
+      }
+      return getFallbackBusinessTags(allBusinessTags);
+    } catch (parseError) {
+      console.error('RAG分析結果のパースエラー:', parseError);
+      return getFallbackBusinessTags(allBusinessTags);
+    }
+  } catch (error) {
+    console.error('RAG分析エラー:', error);
+    return getFallbackBusinessTags(allBusinessTags);
+  }
+}
+
+/**
+ * AIを使ってペルソナに基づいて最適なターゲット先のbusiness_tagを選択
+ */
+async function selectOptimalBusinessTagsWithAI(extractedPersonas: any, allBusinessTags: string[], sampleSize: number): Promise<string[]> {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  // ペルソナからテキストを抽出
+  const personaTexts = extractPersonaTexts(extractedPersonas);
   
-  // 製造業関連
-  '製造業': [
-    '3Dプリンター製造', '3Dプリンター販売', '3Dプリンター卸売', '3D印刷', 'ATM製造',
-    'AV機器製造', 'AV機器販売', 'AV機器卸売', 'CAD・CAM・CAE用ソフトウェア製造',
-    'DVDレコーダー製造', 'DVD製造', 'DVD販売', 'DVD卸売', 'FAシステム製造',
-    'IP監視カメラシステム製造', '自動車部品製造', '自動車部品販売', '自動車部品卸売',
-    '製造業', '製造', '工場', '生産', '加工', '組立', '検査', '品質管理'
-  ],
+  // 全タグをカテゴリ別に分類
+  const categorizedTags = categorizeBusinessTags(allBusinessTags);
   
-  // 小売・流通関連
-  '小売・流通': [
-    '3Dプリンター販売', '3Dプリンター卸売', 'AED販売', 'AED卸売', 'AV機器販売',
-    'AV機器卸売', 'CAD・CAM・CAE用ソフトウェア販売', 'CAD・CAM・CAE用ソフトウェア卸売',
-    'DVD販売', 'DVD卸売', 'DTP用ソフトウェア販売', 'DTP用ソフトウェア卸売',
-    'ERP用ソフトウェア販売', 'ERP用ソフトウェア卸売', 'FAシステム販売', 'FAシステム卸売',
-    '小売業', '卸売業', '流通', '販売', 'EC・通販', 'オンライン販売', 'ECサイト運営'
-  ],
+  const prompt = `あなたは営業戦略コンサルタントです。企業のペルソナ（解決できる課題）を分析して、その企業がアプローチすべき最適なターゲット先のbusiness_tagを選択してください。
+
+【企業のペルソナ情報】
+${personaTexts}
+
+【データベースのbusiness_tag（カテゴリ別）】
+${JSON.stringify(categorizedTags, null, 2)}
+
+【重要】以下の条件を満たすbusiness_tagを選択してください：
+1. ペルソナの内容と最も関連性が高い
+2. 営業ターゲットとして適切
+3. 多様性を考慮（1つのカテゴリに偏らない）
+4. 実現可能性が高い
+5. 最大${sampleSize}個まで選択
+
+選択したbusiness_tagを配列形式で出力してください。
+
+例: ["決済代行", "ECサイト運営", "システム開発", "Webアプリケーション開発", "ITコンサルティング"]`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "あなたは営業戦略コンサルタントです。企業のペルソナを分析して、最適なターゲット先のbusiness_tagを選択してください。"
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 800,
+    });
+
+    const response = completion.choices[0]?.message?.content;
+    if (!response) {
+      return getFallbackBusinessTags(allBusinessTags).slice(0, sampleSize);
+    }
+
+    // JSON配列をパース
+    try {
+      const selectedTags = JSON.parse(response);
+      if (Array.isArray(selectedTags)) {
+        // 選択されたタグが実際にデータベースに存在するかチェック
+        const validTags = selectedTags.filter(tag => allBusinessTags.includes(tag));
+        console.log(`AI最適選択結果: ${validTags.length}件 / 提案${selectedTags.length}件`);
+        return validTags.length > 0 ? validTags : getFallbackBusinessTags(allBusinessTags).slice(0, sampleSize);
+      }
+      return getFallbackBusinessTags(allBusinessTags).slice(0, sampleSize);
+    } catch (parseError) {
+      console.error('AI最適選択結果のパースエラー:', parseError);
+      return getFallbackBusinessTags(allBusinessTags).slice(0, sampleSize);
+    }
+  } catch (error) {
+    console.error('AI最適選択エラー:', error);
+    return getFallbackBusinessTags(allBusinessTags).slice(0, sampleSize);
+  }
+}
+
+/**
+ * business_tagをカテゴリ別に分類
+ */
+function categorizeBusinessTags(allBusinessTags: string[]): Record<string, string[]> {
+  const categories: Record<string, string[]> = {
+    'システム・IT関連': [],
+    '介護・福祉関連': [],
+    '医療・健康関連': [],
+    '不動産関連': [],
+    '製造・工場関連': [],
+    '教育・研修関連': [],
+    '建設・建築関連': [],
+    '金融・保険関連': [],
+    '小売・流通関連': [],
+    'その他サービス': []
+  };
+
+  const categoryKeywords = {
+    'システム・IT関連': ['システム', 'ソフトウェア', 'Web', 'アプリ', 'IT', 'デジタル', 'DX', 'EC', '決済', 'オンライン', '開発', 'プログラミング'],
+    '介護・福祉関連': ['介護', '福祉', '障害者', '施設', '支援', 'グループホーム', 'NPO', '社会福祉', 'ケア', '高齢者'],
+    '医療・健康関連': ['医療', '病院', 'クリニック', '診療', '健康', '看護', 'リハビリ', '薬局', '医療機器'],
+    '不動産関連': ['不動産', '賃貸', '売買', 'マンション', 'アパート', '住宅', '物件', '土地', '建物'],
+    '製造・工場関連': ['製造', '工場', '生産', '加工', '組立', '検査', '品質管理', '自動化', '機械'],
+    '教育・研修関連': ['教育', '学習', '学校', '塾', 'スクール', '研修', '資格', '人材育成', '講座'],
+    '建設・建築関連': ['建設', '建築', '工事', '設計', '施工', 'リフォーム', '新築', '土木'],
+    '金融・保険関連': ['金融', '保険', '銀行', '証券', '投資', 'ローン', '資産運用', 'クレジット'],
+    '小売・流通関連': ['販売', '小売', 'EC', 'オンライン', '店舗', '流通', '卸売', '商社'],
+    'その他サービス': ['コンサルティング', '人材', '派遣', 'サービス', 'BPO', '清掃', '警備', '広告']
+  };
+
+  for (const tag of allBusinessTags) {
+    let categorized = false;
+    
+    for (const [category, keywords] of Object.entries(categoryKeywords)) {
+      if (keywords.some(keyword => tag.includes(keyword))) {
+        categories[category].push(tag);
+        categorized = true;
+        break;
+      }
+    }
+    
+    if (!categorized) {
+      categories['その他サービス'].push(tag);
+    }
+  }
+
+  // 各カテゴリのタグ数を制限（AIの処理能力を考慮）
+  for (const category in categories) {
+    if (categories[category].length > 50) {
+      categories[category] = categories[category].slice(0, 50);
+    }
+  }
+
+  return categories;
+}
+
+/**
+ * 多様なbusiness_tagのサンプルを取得（非推奨）
+ * @deprecated この関数は使用しない。selectOptimalBusinessTagsWithAIを使用すること。
+ */
+function getDiverseBusinessTagSample(allBusinessTags: string[], sampleSize: number): string[] {
+  const categories = {
+    'システム・IT': ['システム', 'ソフトウェア', 'Web', 'アプリ', 'IT', 'デジタル', 'DX', 'EC', '決済', 'オンライン'],
+    '介護・福祉': ['介護', '福祉', '障害者', '施設', '支援', 'グループホーム', 'NPO', '社会福祉'],
+    '医療・健康': ['医療', '病院', 'クリニック', '診療', '健康', '看護', 'リハビリ'],
+    '不動産': ['不動産', '賃貸', '売買', 'マンション', 'アパート', '住宅', '物件'],
+    '製造・工場': ['製造', '工場', '生産', '加工', '組立', '検査', '品質管理', '自動化'],
+    '教育・研修': ['教育', '学習', '学校', '塾', 'スクール', '研修', '資格', '人材育成'],
+    '建設・建築': ['建設', '建築', '工事', '設計', '施工', 'リフォーム', '新築'],
+    '金融・保険': ['金融', '保険', '銀行', '証券', '投資', 'ローン', '資産運用'],
+    '小売・流通': ['販売', '小売', 'EC', 'オンライン', '店舗', '流通'],
+    'その他': ['コンサルティング', '人材', '派遣', 'サービス', 'BPO']
+  };
   
-  // 金融・保険関連
-  '金融・保険': [
-    'ETCカード発行', '介護保険販売', '医療保険販売', '不動産担保ローン販売',
-    '金融', '保険', '銀行', '証券', '投資', 'ローン', 'クレジット', '決済',
-    '金融コンサルティング', '保険コンサルティング', '資産運用', '投資信託',
-    '生命保険', '損害保険', '自動車保険', '火災保険', '地震保険'
-  ],
+  const sampledTags: string[] = [];
+  const tagsPerCategory = Math.floor(sampleSize / Object.keys(categories).length);
   
-  // 教育・研修関連
-  '教育・研修': [
-    'CADスクール運営', 'IT資格取得支援', '教育', '研修', '学校', '学習', '教育サービス',
-    '資格取得支援', '職業訓練', '人材育成', 'スキルアップ', '専門学校運営',
-    '学習塾運営', '予備校運営', '語学学校運営', 'パソコン教室運営'
-  ],
+  for (const [category, keywords] of Object.entries(categories)) {
+    const categoryTags: string[] = [];
+    
+    for (const keyword of keywords) {
+      const matchingTags = allBusinessTags.filter(tag => tag.includes(keyword));
+      categoryTags.push(...matchingTags);
+    }
+    
+    // 重複を除去してランダムに選択
+    const uniqueCategoryTags = [...new Set(categoryTags)];
+    const shuffled = uniqueCategoryTags.sort(() => Math.random() - 0.5);
+    sampledTags.push(...shuffled.slice(0, tagsPerCategory));
+  }
   
-  // その他
-  'その他': [
-    'その他', 'その他サービス', 'コンサルティング', '人材派遣', '人材紹介',
-    'BPO関連サービス提供', 'DM制作', 'DM発送代行', 'DNA検査', 'ETC車載器取付',
-    'CG制作', 'CGパース製造', 'CD・レコードショップ運営', 'CD・レコード制作',
-    'CD・レコード販売', 'CD・レコード買取', 'CDジャケット印刷'
-  ]
-};
+  // 残りのスロットをランダムに埋める
+  const remainingSlots = sampleSize - sampledTags.length;
+  if (remainingSlots > 0) {
+    const usedTags = new Set(sampledTags);
+    const availableTags = allBusinessTags.filter(tag => !usedTags.has(tag));
+    const shuffled = availableTags.sort(() => Math.random() - 0.5);
+    sampledTags.push(...shuffled.slice(0, remainingSlots));
+  }
+  
+  return sampledTags;
+}
+
+/**
+ * ペルソナからテキストを抽出
+ */
+function extractPersonaTexts(extractedPersonas: any): string {
+  const texts: string[] = [];
+  
+  if (extractedPersonas?.targets) {
+    for (const target of extractedPersonas.targets) {
+      if (target.personas) {
+        for (const persona of target.personas) {
+          const personaText = persona.persona_mapped || persona.persona_statement_raw || '';
+          if (personaText) {
+            texts.push(personaText);
+          }
+        }
+      }
+    }
+  }
+  
+  return texts.join(' ');
+}
+
+/**
+ * フォールバック用のbusiness_tagを取得
+ */
+function getFallbackBusinessTags(allBusinessTags: string[]): string[] {
+  // 一般的なタグを優先的に選択
+  const commonKeywords = ['システム', '開発', 'EC', '決済', 'Web', 'IT', '介護', '医療', '不動産'];
+  const fallbackTags: string[] = [];
+  
+  for (const keyword of commonKeywords) {
+    const matchingTags = allBusinessTags.filter(tag => tag.includes(keyword));
+    fallbackTags.push(...matchingTags.slice(0, 3)); // 各キーワードから最大3個
+  }
+  
+  // 重複を除去して最大20個に制限
+  return [...new Set(fallbackTags)].slice(0, 20);
+}
+
+/**
+ * AIにペルソナを分析させて関連するタグカテゴリを判断（非推奨）
+ * @deprecated この関数は使用しない。selectRelevantBusinessTagsWithRAGを使用すること。
+ */
+async function analyzePersonaForTagCategories(extractedPersonas: any): Promise<string[]> {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  const prompt = `あなたはデータベース検索の専門家です。企業のペルソナ（解決できる課題）を分析して、データベースから関連するbusiness_tagを検索する際に使用すべきキーワードを提案してください。
+
+企業のペルソナ情報:
+${JSON.stringify(extractedPersonas, null, 2)}
+
+【重要】ペルソナの内容を分析して、以下の観点から関連するキーワードを提案してください：
+
+1. 決済・支払い関連: 決済、手数料、支払い、EC、オンライン、クレジット、デビット、電子マネー
+2. システム・IT関連: システム、カスタマイズ、開発、Web、ソフトウェア、IT、デジタル、DX
+3. 飲食・小売関連: 飲食、レストラン、カフェ、店舗、販売、小売、EC、オンライン
+4. 介護・福祉関連: 介護、福祉、障害者、施設、支援、グループホーム、NPO、社会福祉
+5. 医療・健康関連: 医療、病院、クリニック、診療、健康、看護、リハビリ
+6. 不動産関連: 不動産、賃貸、売買、マンション、アパート、住宅、物件
+7. 製造・工場関連: 製造、工場、生産、加工、組立、検査、品質管理、自動化
+8. 教育・研修関連: 教育、学習、学校、塾、スクール、研修、資格、人材育成
+9. 建設・建築関連: 建設、建築、工事、設計、施工、リフォーム、新築
+10. 金融・保険関連: 金融、保険、銀行、証券、投資、ローン、資産運用
+
+ペルソナの内容に基づいて、最も関連性の高いキーワードを5-10個提案してください。
+キーワードのみを配列形式で出力してください。
+
+例: ["決済", "手数料", "EC", "オンライン", "システム", "Web", "カスタマイズ"]`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "あなたはデータベース検索の専門家です。企業のペルソナを分析して、関連するbusiness_tagを検索するためのキーワードを提案してください。"
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 300,
+    });
+
+    const response = completion.choices[0]?.message?.content;
+    if (!response) {
+      return ['システム', '開発', 'IT']; // フォールバック
+    }
+
+    // JSON配列をパース
+    try {
+      const keywords = JSON.parse(response);
+      return Array.isArray(keywords) ? keywords : ['システム', '開発', 'IT'];
+    } catch (parseError) {
+      console.error('AI分析結果のパースエラー:', parseError);
+      return ['システム', '開発', 'IT'];
+    }
+  } catch (error) {
+    console.error('AIペルソナ分析エラー:', error);
+    return ['システム', '開発', 'IT'];
+  }
+}
+
+/**
+ * ペルソナからキーワードを抽出（非推奨）
+ * @deprecated この関数は使用しない。analyzePersonaForTagCategoriesを使用すること。
+ */
+function extractPersonaKeywords(extractedPersonas: any): string[] {
+  const keywords: string[] = [];
+  
+  if (extractedPersonas?.targets) {
+    for (const target of extractedPersonas.targets) {
+      if (target.personas) {
+        for (const persona of target.personas) {
+          const personaText = persona.persona_mapped || persona.persona_statement_raw || '';
+          
+          // 決済関連
+          if (personaText.includes('決済') || personaText.includes('手数料') || personaText.includes('支払い')) {
+            keywords.push('決済', '手数料', '支払い', 'EC', 'オンライン', 'システム', 'Web');
+          }
+          
+          // システム関連
+          if (personaText.includes('システム') || personaText.includes('カスタマイズ') || personaText.includes('開発')) {
+            keywords.push('システム', 'カスタマイズ', '開発', 'Web', 'ソフトウェア', 'IT');
+          }
+          
+          // 飲食店関連
+          if (personaText.includes('飲食') || personaText.includes('レストラン') || personaText.includes('カフェ')) {
+            keywords.push('飲食', 'レストラン', 'カフェ', '店舗', '販売');
+          }
+          
+          // 介護関連
+          if (personaText.includes('介護') || personaText.includes('福祉') || personaText.includes('障害者')) {
+            keywords.push('介護', '福祉', '障害者', '施設', '支援');
+          }
+          
+          // 医療関連
+          if (personaText.includes('医療') || personaText.includes('病院') || personaText.includes('クリニック')) {
+            keywords.push('医療', '病院', 'クリニック', '診療');
+          }
+          
+          // 不動産関連
+          if (personaText.includes('不動産') || personaText.includes('賃貸') || personaText.includes('マンション')) {
+            keywords.push('不動産', '賃貸', 'マンション', 'アパート');
+          }
+        }
+      }
+    }
+  }
+  
+  // 重複を除去
+  return [...new Set(keywords)];
+}
+
+/**
+ * タグがペルソナと関連するかチェック
+ */
+function isTagRelevantToPersona(tag: string, personaKeywords: string[]): boolean {
+  for (const keyword of personaKeywords) {
+    if (tag.includes(keyword)) {
+      return true;
+    }
+  }
+  return false;
+}
+  
+
+/**
+ * AIが企業のペルソナを分析して幅広い業種を提案する
+ */
+async function analyzePersonaForIndustries(extractedPersonas: any, companyName: string): Promise<string[]> {
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  const prompt = `あなたは営業戦略コンサルタントです。企業のペルソナ（解決できる課題）を分析して、その企業がアプローチすべき業種を提案してください。
+
+企業名: ${companyName}
+ペルソナ情報:
+${JSON.stringify(extractedPersonas, null, 2)}
+
+【重要】企業のペルソナに基づいて、その企業のサービスが解決できる課題を抱えている業種を提案してください。IT企業もあれば介護企業もあるので、それぞれの企業に合ったターゲット先を提案してください。
+
+以下の観点から、アプローチすべき業種を提案してください：
+
+1. IT・システム開発（システム導入していない企業、デジタル化が進んでいない企業）
+2. 小売業（EC化していない小売店、決済システムが古い企業）
+3. 製造業（IT化が進んでいない製造業、システム導入していない工場）
+4. 金融（決済システムが古い金融機関、デジタル化が進んでいない企業）
+5. 福祉・介護関連（介護施設、障害者支援施設、社会福祉法人など）
+6. 医療・リハビリ関係（病院、クリニック、リハビリ施設など）
+7. 行政・自治体関連（市区町村、地域包括支援センターなど）
+8. 教育（学校、塾、研修機関など）
+9. 建設業（建設会社、設計事務所など）
+10. 不動産（不動産会社、賃貸管理会社など）
+11. その他の業種（企業のペルソナに基づいて関連性の高い業種）
+
+企業のペルソナに基づいて、最も関連性の高い業種を3-5個提案してください。
+業種名のみを配列形式で出力してください。
+
+例: ["IT・システム開発", "小売業", "製造業"]`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "あなたは営業戦略コンサルタントです。企業のペルソナを分析して、アプローチすべき業種を幅広く提案してください。"
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 500,
+    });
+
+    const response = completion.choices[0]?.message?.content;
+    if (!response) {
+      return ['その他'];
+    }
+
+    // JSON配列をパース
+    try {
+      const industries = JSON.parse(response);
+      return Array.isArray(industries) ? industries : ['その他'];
+    } catch (parseError) {
+      console.error('業種提案のパースエラー:', parseError);
+      return ['その他'];
+    }
+  } catch (error) {
+    console.error('AI業種分析エラー:', error);
+    return ['その他'];
+  }
+}
+
+/**
+ * AI提案業種からデータベースに既存のbusiness_tagを検索（最適化版）
+ */
+async function findMatchingBusinessTags(aiProposedIndustries: string[], extractedPersonas: any): Promise<string[]> {
+  // まず、ペルソナに基づいて関連するタグを事前フィルタリング
+  const relevantTags = await filterRelevantBusinessTags(extractedPersonas);
+  console.log(`事前フィルタリング後の関連タグ: ${relevantTags.length}件`);
+  
+  const matchingTags: string[] = [];
+  
+  // フィルタリングされたタグから業種にマッチするものを検索
+  for (const industry of aiProposedIndustries) {
+    const tags = await findExistingBusinessTagsForIndustryFromFiltered(industry, relevantTags);
+    matchingTags.push(...tags);
+  }
+  
+  // 重複を除去
+  return [...new Set(matchingTags)];
+}
+
+/**
+ * フィルタリングされたタグから業種にマッチするものを検索（最適化版）
+ */
+function findExistingBusinessTagsForIndustryFromFiltered(industry: string, filteredTags: string[]): string[] {
+  const industryKeywordMapping: Record<string, string[]> = {
+    // IT・システム関連
+    'IT・システム開発': ['システム', 'ソフトウェア', 'Web', 'アプリ', 'IT', 'デジタル', 'DX', 'EC', '決済', 'オンライン'],
+    '小売業': ['EC', 'オンライン', '販売', '決済', 'システム', 'IT', 'デジタル'],
+    '製造業': ['製造', '工場', 'システム', 'IT', 'デジタル', '自動化'],
+    '金融': ['金融', '決済', 'システム', 'IT', 'デジタル', 'オンライン'],
+    
+    // 福祉・介護関連
+    '行政・自治体': ['行政', '自治体', '公共', '福祉', '介護', '障害者'],
+    '福祉事業所・支援団体': ['福祉', '介護', '障害者', 'グループホーム', 'NPO', '社会福祉'],
+    '医療・リハビリ関係': ['医療', '病院', 'クリニック', 'リハビリ', '介護'],
+    '保険・法律・金融関連': ['保険', '法律', '金融', '弁護士', '司法書士', '成年後見'],
+    '地域包括支援': ['福祉', '介護', 'ケア', '社会福祉', '地域'],
+    
+    // その他の業種
+    '教育': ['教育', '学習', '学校', '塾', 'スクール', '研修'],
+    '建設業': ['建設', '建築', '工事', '設計', '施工'],
+    '不動産': ['不動産', '賃貸', '売買', 'マンション', 'アパート'],
+    '卸売業': ['卸売', '卸', '商社', '貿易'],
+    'サービス業': ['サービス', 'コンサルティング', '人材', '派遣']
+  };
+  
+  const keywords = industryKeywordMapping[industry] || [];
+  const matchingTags: string[] = [];
+  
+  // フィルタリングされたタグからキーワードにマッチするものを検索
+  for (const tag of filteredTags) {
+    for (const keyword of keywords) {
+      if (tag.includes(keyword)) {
+        matchingTags.push(tag);
+        break; // 1つのキーワードにマッチしたら次のタグへ
+      }
+    }
+  }
+  
+  return matchingTags;
+}
+
+/**
+ * 業種カテゴリに対応する既存のbusiness_tagを検索（非最適化版）
+ * @deprecated この関数は使用しない。findExistingBusinessTagsForIndustryFromFilteredを使用すること。
+ */
+async function findExistingBusinessTagsForIndustry(industry: string): Promise<string[]> {
+  const industryKeywordMapping: Record<string, string[]> = {
+    // IT・システム関連
+    'IT・システム開発': ['システム', 'ソフトウェア', 'Web', 'アプリ', 'IT', 'デジタル', 'DX', 'EC', '決済', 'オンライン'],
+    '小売業': ['EC', 'オンライン', '販売', '決済', 'システム', 'IT', 'デジタル'],
+    '製造業': ['製造', '工場', 'システム', 'IT', 'デジタル', '自動化'],
+    '金融': ['金融', '決済', 'システム', 'IT', 'デジタル', 'オンライン'],
+    
+    // 福祉・介護関連
+    '行政・自治体': ['行政', '自治体', '公共', '福祉', '介護', '障害者'],
+    '福祉事業所・支援団体': ['福祉', '介護', '障害者', 'グループホーム', 'NPO', '社会福祉'],
+    '医療・リハビリ関係': ['医療', '病院', 'クリニック', 'リハビリ', '介護'],
+    '保険・法律・金融関連': ['保険', '法律', '金融', '弁護士', '司法書士', '成年後見'],
+    '地域包括支援': ['福祉', '介護', 'ケア', '社会福祉', '地域'],
+    
+    // その他の業種
+    '教育': ['教育', '学習', '学校', '塾', 'スクール', '研修'],
+    '建設業': ['建設', '建築', '工事', '設計', '施工'],
+    '不動産': ['不動産', '賃貸', '売買', 'マンション', 'アパート'],
+    '卸売業': ['卸売', '卸', '商社', '貿易'],
+    'サービス業': ['サービス', 'コンサルティング', '人材', '派遣']
+  };
+  
+  const keywords = industryKeywordMapping[industry] || [];
+  const matchingTags: string[] = [];
+  
+  // 実際のデータベースタグからキーワードにマッチするものを検索
+  const allBusinessTags = await loadActualDatabaseBusinessTags();
+  for (const tag of allBusinessTags) {
+    for (const keyword of keywords) {
+      if (tag.includes(keyword)) {
+        matchingTags.push(tag);
+        break; // 1つのキーワードにマッチしたら次のタグへ
+      }
+    }
+  }
+  
+  return matchingTags;
+}
 
 /**
  * 業種から商材を推論（実際のデータベースのbusiness_tagに基づく）
+ * @deprecated この関数は使用しない。findMatchingBusinessTagsを使用すること。
  */
 function inferBusinessTag(industry: string): string[] {
-  const industryMapping: Record<string, string[]> = {
-    '支援機関': ['介護施設運営', '障害者支援施設運営', '社会福祉法人運営', '福祉システム開発'],
-    '製造業': ['3Dプリンター製造', 'AV機器製造', 'DVDレコーダー製造', '自動車部品製造'],
-    'IT・システム開発': ['システム開発', 'ソフトウェア開発', 'Webアプリケーション開発', 'モバイルアプリ開発'],
-    '小売業': ['3Dプリンター販売', 'AV機器販売', 'DVD販売', 'ECサイト運営'],
-    '卸売業': ['3Dプリンター卸売', 'AV機器卸売', 'DVD卸売'],
-    '建設業': ['エコ住宅建設', '福祉施設建設', '福祉施設設計'],
-    '医療・福祉': ['クリニック(診療所)運営', '病院運営', '医療機器販売', '介護施設運営'],
-    '教育': ['CADスクール運営', 'IT資格取得支援', '学習塾運営', '専門学校運営'],
-    '金融': ['ETCカード発行', '介護保険販売', '医療保険販売', '不動産担保ローン販売'],
-    '不動産': ['不動産任意売却', '不動産情報サイト運営', 'アパート賃貸', 'マンション賃貸'],
-    '福祉': ['介護施設運営', '障害者支援施設運営', '福祉システム開発', '福祉人材派遣'],
-    '介護': ['介護施設運営', '介護サービス計画(ケアプラン)作成', '介護人材派遣', '介護用品販売'],
-    '障害者支援': ['障害者支援施設運営', '障害者就労支援', '障害者雇用支援', '介護施設運営'],
-    '社会福祉': ['社会福祉法人運営', '介護施設運営', '福祉システム開発']
-  };
-  
-  return industryMapping[industry] || ['その他'];
+  // 後方互換性のため残すが、実際には使用しない
+  return ['その他'];
 }
 
 /**

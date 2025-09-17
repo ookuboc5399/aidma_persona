@@ -701,12 +701,11 @@ export default function Home() {
       const companies = companiesResult.companies || [];
       console.log(`取得した企業数: ${companies.length}社`);
 
-      // テスト用：最初の2社のみ処理
-      const testCompanies = companies.slice(0, 2);
-      console.log(`テスト用：${testCompanies.length}社を並行処理します`);
+      // 全企業を並行処理
+      console.log(`${companies.length}社を並行処理します`);
 
       // 各企業を並行処理
-      const processPromises = testCompanies.map(async (company: any, index: number) => {
+      const processPromises = companies.map(async (company: any, index: number) => {
         try {
           console.log(`企業${index + 1}の処理開始: ${company.companyName}`);
           
@@ -1216,9 +1215,9 @@ export default function Home() {
                       }}
                       disabled={selectedCompanyIndex === null || isPersonaProcessing}
                       className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 transition"
-                      title="ペルソナ抽出 + ターゲット検索（新機能）"
+                      title="企業が解決できる課題の抽出 + ターゲット検索（新機能）"
                     >
-                      {isPersonaProcessing ? 'ペルソナ処理中...' : 'ペルソナ抽出'}
+                      {isPersonaProcessing ? '課題抽出処理中...' : '課題抽出'}
                     </button>
                     <button
                       onClick={handleBulkRegisterByDate}
@@ -1936,7 +1935,7 @@ export default function Home() {
         </section>
       )}
 
-      {/* ペルソナ抽出結果表示セクション */}
+      {/* 企業が解決できる課題 表示セクション */}
       {(personaResults || personaError) && (
         <section className="relative py-10">
           <div className="absolute inset-0 bg-center bg-cover" style={{ backgroundImage: 'url(/top1.png)' }}></div>
@@ -1944,7 +1943,7 @@ export default function Home() {
           <div className="relative container mx-auto px-4">
             <div className="bg-white/95 text-slate-900 rounded-xl shadow-2xl p-6 md:p-8 backdrop-blur-sm">
               <h2 className="text-4xl font-bold [font-family:var(--font-serif-jp)] text-slate-900 tracking-wide mb-6">
-                ペルソナ抽出結果
+                企業が解決できる課題
               </h2>
               
               {personaError && (
@@ -1974,10 +1973,10 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* 抽出されたペルソナ */}
+                  {/* 企業が解決できる課題 */}
                   {personaResults.results?.personaResults?.extractedPersonas && (
                     <div className="bg-blue-50 p-4 rounded-lg">
-                      <h3 className="text-lg font-semibold mb-3">抽出された{personaResults.results?.companyName || '企業'}のペルソナ</h3>
+                      <h3 className="text-lg font-semibold mb-3">{personaResults.results?.companyName || '企業'}が解決できる課題</h3>
                       <div className="space-y-4">
                         {personaResults.results.personaResults.extractedPersonas.targets?.map((target: any, targetIndex: number) => (
                           <div key={targetIndex} className="bg-white p-4 rounded border">
@@ -2013,77 +2012,104 @@ export default function Home() {
                         ターゲット検索結果 (総マッチ数: {personaResults.results.targetSearchResults.results.summary?.totalMatches || 0}件)
                       </h3>
                       <div className="space-y-4">
-                        {personaResults.results.targetSearchResults.results.searchResults?.map((searchResult: any, searchIndex: number) => (
-                          <div key={searchIndex} className="bg-white p-4 rounded border">
-                            <h4 className="font-semibold text-green-800 mb-2">
-                              業種: {searchResult.industry} (マッチ数: {searchResult.totalMatches}件)
-                            </h4>
-                            <div className="space-y-3">
-                              {searchResult.personas?.map((persona: any, personaIndex: number) => (
-                                <div key={personaIndex} className="bg-gray-50 p-3 rounded">
-                                  <p className="font-medium text-gray-800">{persona.personaMapped || persona.personaStatement}</p>
-                                  <p className="text-sm text-gray-600">マッチ数: {persona.matchCount}件</p>
-                                  {persona.symptomKeywords && persona.symptomKeywords.length > 0 && (
-                                    <div className="mt-2">
-                                      <p className="text-xs font-semibold text-gray-700">検索キーワード:</p>
-                                      <div className="flex flex-wrap gap-1 mt-1">
-                                        {persona.symptomKeywords.map((keyword: string, keywordIndex: number) => (
-                                          <span key={keywordIndex} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
-                                            {keyword}
-                                          </span>
-                                        ))}
+                        {personaResults.results.targetSearchResults.results.searchResults?.map((searchResult: any, searchIndex: number) => {
+                          // 重複を除去してユニークな商材のみを取得
+                          const uniqueBusinessTags = new Set();
+                          const uniqueMatches = searchResult.personas?.flatMap((persona: any) => 
+                            persona.matches?.filter((match: any) => {
+                              if (match.BUSINESS_TAG && !uniqueBusinessTags.has(match.BUSINESS_TAG)) {
+                                uniqueBusinessTags.add(match.BUSINESS_TAG);
+                                return true;
+                              }
+                              return false;
+                            }) || []
+                          ) || [];
+                          
+                          // 最大30件に制限
+                          const limitedMatches = uniqueMatches.slice(0, 30);
+                          
+                          return (
+                            <div key={searchIndex} className="bg-white p-4 rounded border">
+                              <h4 className="font-semibold text-green-800 mb-2">
+                                業種: {searchResult.industry} (ユニーク商材数: {limitedMatches.length}件)
+                              </h4>
+                              
+                              {/* アコーディオンメニュー */}
+                              <div className="space-y-2">
+                                {limitedMatches.map((match: any, matchIndex: number) => (
+                                  <div key={matchIndex} className="border border-gray-200 rounded">
+                                    <button
+                                      className="w-full px-4 py-3 text-left bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors duration-200"
+                                      onClick={() => {
+                                        const contentId = `content-${searchIndex}-${matchIndex}`;
+                                        const content = document.getElementById(contentId);
+                                        if (content) {
+                                          content.style.display = content.style.display === 'none' ? 'block' : 'none';
+                                        }
+                                      }}
+                                    >
+                                      <div className="flex justify-between items-center">
+                                        <div className="flex-1">
+                                          <h5 className="font-medium text-gray-900">{match.BUSINESS_TAG || '未分類'}</h5>
+                                          <p className="text-sm text-gray-600">
+                                            {match.DEPARTMENT || '部署未指定'} | {match.SIZE_BAND || '規模未指定'}
+                                          </p>
+                                        </div>
+                                        <div className="ml-4">
+                                          <svg 
+                                            className="w-5 h-5 text-gray-500 transform transition-transform duration-200" 
+                                            fill="none" 
+                                            stroke="currentColor" 
+                                            viewBox="0 0 24 24"
+                                          >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                          </svg>
+                                        </div>
+                                      </div>
+                                    </button>
+                                    
+                                    <div 
+                                      id={`content-${searchIndex}-${matchIndex}`}
+                                      className="hidden px-4 py-3 bg-white border-t border-gray-200"
+                                    >
+                                      <div className="space-y-3">
+                                        <div>
+                                          <h6 className="font-semibold text-sm text-gray-700 mb-1">課題名</h6>
+                                          <p className="text-sm text-gray-600">{match.CHALLENGE_NAME || '未指定'}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <h6 className="font-semibold text-sm text-gray-700 mb-1">症状・具体像</h6>
+                                          <p className="text-sm text-gray-600">{match.SYMPTOM || '未指定'}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <h6 className="font-semibold text-sm text-gray-700 mb-1">推奨アウトバウンド施策</h6>
+                                          <p className="text-sm text-gray-600">{match.RECOMMENDED_OUTBOUND_PLAY || '未指定'}</p>
+                                        </div>
+                                        
+                                        <div>
+                                          <h6 className="font-semibold text-sm text-gray-700 mb-1">主要KPI</h6>
+                                          <p className="text-sm text-gray-600">{match.PRIMARY_KPI || '未指定'}</p>
+                                        </div>
                                       </div>
                                     </div>
-                                  )}
-                                  {persona.matches && persona.matches.length > 0 && (
-                                    <div className="mt-2">
-                                      <p className="text-xs font-semibold text-gray-700 mb-2">マッチした企業例:</p>
-                                      <div className="overflow-x-auto">
-                                        <table className="min-w-full text-xs border-collapse border border-gray-300">
-                                          <thead>
-                                            <tr className="bg-gray-100">
-                                              <th className="border border-gray-300 px-2 py-1 text-left">商材</th>
-                                              <th className="border border-gray-300 px-2 py-1 text-left">部署</th>
-                                              <th className="border border-gray-300 px-2 py-1 text-left">規模</th>
-                                              <th className="border border-gray-300 px-2 py-1 text-left">課題</th>
-                                              <th className="border border-gray-300 px-2 py-1 text-left">症状</th>
-                                              <th className="border border-gray-300 px-2 py-1 text-left">提案施策</th>
-                                              <th className="border border-gray-300 px-2 py-1 text-left">KPI</th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {persona.matches.slice(0, 5).map((match: any, matchIndex: number) => (
-                                              <tr key={matchIndex} className={matchIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                                <td className="border border-gray-300 px-2 py-1">{match.BUSINESS_TAG || '-'}</td>
-                                                <td className="border border-gray-300 px-2 py-1">{match.DEPARTMENT || '-'}</td>
-                                                <td className="border border-gray-300 px-2 py-1">{match.SIZE_BAND || '-'}</td>
-                                                <td className="border border-gray-300 px-2 py-1">{match.CHALLENGE_NAME || '-'}</td>
-                                                <td className="border border-gray-300 px-2 py-1 max-w-xs truncate" title={match.SYMPTOM || ''}>
-                                                  {match.SYMPTOM ? (match.SYMPTOM.length > 50 ? match.SYMPTOM.substring(0, 50) + '...' : match.SYMPTOM) : '-'}
-                                                </td>
-                                                <td className="border border-gray-300 px-2 py-1 max-w-xs truncate" title={match.RECOMMENDED_OUTBOUND_PLAY || ''}>
-                                                  {match.RECOMMENDED_OUTBOUND_PLAY ? (match.RECOMMENDED_OUTBOUND_PLAY.length > 50 ? match.RECOMMENDED_OUTBOUND_PLAY.substring(0, 50) + '...' : match.RECOMMENDED_OUTBOUND_PLAY) : '-'}
-                                                </td>
-                                                <td className="border border-gray-300 px-2 py-1 max-w-xs truncate" title={match.PRIMARY_KPI || ''}>
-                                                  {match.PRIMARY_KPI ? (match.PRIMARY_KPI.length > 30 ? match.PRIMARY_KPI.substring(0, 30) + '...' : match.PRIMARY_KPI) : '-'}
-                                                </td>
-                                              </tr>
-                                            ))}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                      {persona.matches.length > 5 && (
-                                        <p className="text-xs text-gray-500 mt-1">
-                                          他 {persona.matches.length - 5} 件のマッチがあります
-                                        </p>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
+                                  </div>
+                                ))}
+                                
+                                {limitedMatches.length === 0 && (
+                                  <p className="text-gray-500 text-center py-4">マッチした商材がありません</p>
+                                )}
+                                
+                                {uniqueMatches.length > 30 && (
+                                  <p className="text-xs text-gray-500 text-center py-2">
+                                    他 {uniqueMatches.length - 30} 件の商材があります（表示を30件に制限）
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}

@@ -372,7 +372,7 @@ async function semanticMatching(challenges: string[]): Promise<any[]> {
           AND BUSINESS_DESCRIPTION IS NOT NULL
           AND BUSINESS_DESCRIPTION != ''
         ORDER BY match_score DESC, RANDOM()
-        LIMIT 3
+        LIMIT 50
       `;
 
       const results = await snowflakeClient.executeQuery(semanticQuery);
@@ -511,7 +511,7 @@ async function findMatchingCompanies(challenges: string[]): Promise<any[]> {
         AND BUSINESS_DESCRIPTION IS NOT NULL
         AND BUSINESS_DESCRIPTION != ''
       ORDER BY RANDOM()
-      LIMIT 3
+      LIMIT 50
     `;
     
     const results = await snowflakeClient.executeQuery(randomQuery);

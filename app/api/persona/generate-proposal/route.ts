@@ -7,7 +7,7 @@ const openai = new OpenAI({
 
 export async function POST(req: NextRequest) {
   try {
-    const { extractedPersonas, targetSearchResults, companyName, serviceName } = await req.json();
+    const { extractedPersonas, targetSearchResults, companyName, serviceName, companyInfo } = await req.json();
 
     if (!extractedPersonas || !targetSearchResults || !companyName) {
       return NextResponse.json(
@@ -31,7 +31,10 @@ export async function POST(req: NextRequest) {
 - 企業名: ${companyName}
 - サービス名: ${serviceName || '未指定'}
 
-# 抽出されたペルソナ（企業の強み・特徴）
+# 企業のサービス内容（会話データから抽出された情報）
+${companyInfo ? JSON.stringify(companyInfo, null, 2) : '企業のサービス情報は未取得です'}
+
+# 抽出されたペルソナ（企業が解決できる課題）
 ${JSON.stringify(extractedPersonas, null, 2)}
 
 # データベース検索結果（RAGで使用するデータ）
@@ -72,17 +75,36 @@ ${JSON.stringify(targetSearchResults.searchResults?.slice(0, 10), null, 2)}
 - [RECOMMENDED_OUTBOUND_PLAYから抽出した施策3]
 
 ◆ 成果指標（合意したいKPI）
-※ データベースのPRIMARY_KPIの内容を必ず使用
-- [PRIMARY_KPIの内容]
+※ データベースのPRIMARY_KPIの内容を必ず使用（ただし、以下のKPIは除外：通電率/到達率/診断受諾率/1st Mtg率/SQL化率）
+- [PRIMARY_KPIの内容（除外対象KPI以外）]
 
 ◆ なぜこの提案に至ったのか（思考プロセス）
-[企業のペルソナとデータベースの検索結果を組み合わせて、なぜこのターゲットが最適なのかの論理的な説明]
+【重要】以下の形式で企業のサービス内容とペルソナを基にした提案理由を記述してください：
+
+[企業名]のサービスを導入することで解決できる課題
+
+[企業名]が提供するサービス（[実際のサービス内容を記載]）を導入することで、顧客企業は以下の課題を解決できると期待されます。
+
+1. [ペルソナで抽出された課題1]
+• [具体的な解決方法]: [企業のサービスがどのように課題を解決するかの詳細説明]
+• [具体的な解決方法]: [企業のサービスがどのように課題を解決するかの詳細説明]
+
+2. [ペルソナで抽出された課題2]
+• [具体的な解決方法]: [企業のサービスがどのように課題を解決するかの詳細説明]
+• [具体的な解決方法]: [企業のサービスがどのように課題を解決するかの詳細説明]
+
+3. [ペルソナで抽出された課題3]
+• [具体的な解決方法]: [企業のサービスがどのように課題を解決するかの詳細説明]
+• [具体的な解決方法]: [企業のサービスがどのように課題を解決するかの詳細説明]
+
+[企業名]は、[企業の戦略や方針]のため、[具体的なターゲット戦略]をターゲットとしています。また、[追加のサービス領域]も手掛けるケースがあります。
 
 重要：
 - データベースの内容（BUSINESS_TAG、DEPARTMENT、SIZE_BAND、CHALLENGE_NAME、SYMPTOM、RECOMMENDED_OUTBOUND_PLAY、PRIMARY_KPI）を必ず使用する
 - 企業のペルソナとデータベースの内容を組み合わせて論理的な説明を行う
 - データベースにない情報は推測で補完しない
-- データベースの実際の値を使用して具体的な提案を行う`;
+- データベースの実際の値を使用して具体的な提案を行う
+- 成果指標（KPI）から以下の項目は除外する：通電率、到達率、診断受諾率、1st Mtg率、SQL化率`;
 
     // OpenAI APIを使用して提案書を生成
     const completion = await openai.chat.completions.create({
@@ -90,7 +112,7 @@ ${JSON.stringify(targetSearchResults.searchResults?.slice(0, 10), null, 2)}
       messages: [
         {
           role: "system",
-          content: "あなたは営業戦略コンサルタントです。RAG（Retrieval-Augmented Generation）の手法を使用して、データベースの内容を必ず使用してターゲット提案書を作成してください。データベースのBUSINESS_TAG、DEPARTMENT、SIZE_BAND、CHALLENGE_NAME、SYMPTOM、RECOMMENDED_OUTBOUND_PLAY、PRIMARY_KPIの内容を必ず使用し、企業のペルソナと組み合わせて論理的な提案を行ってください。データベースにない情報は推測で補完せず、必ずデータベースの実際の値を使用してください。"
+          content: "あなたは営業戦略コンサルタントです。企業の実際のサービス内容とペルソナ（解決できる課題）を基に、データベースの内容を活用してターゲット提案書を作成してください。特に「なぜこの提案に至ったのか」の項目では、企業の具体的なサービス内容（受託開発、決済代行、システム開発など）とペルソナで抽出された課題を組み合わせて、なぜそのターゲットが最適なのかを論理的に説明してください。データベースのBUSINESS_TAG、DEPARTMENT、SIZE_BAND、CHALLENGE_NAME、SYMPTOM、RECOMMENDED_OUTBOUND_PLAY、PRIMARY_KPIの内容を必ず使用し、企業のサービス内容とペルソナを組み合わせて論理的な提案を行ってください。成果指標（KPI）からは以下の項目を除外してください：通電率、到達率、診断受諾率、1st Mtg率、SQL化率。"
         },
         {
           role: "user",
