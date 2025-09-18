@@ -34,6 +34,7 @@ interface MatchingResult {
   considerations: string[];
   implementation_timeline: string;
   estimated_cost: string;
+  consultant_name?: string; // CONSULTANT_NAMEフィールドを追加
 }
 
 interface ProcessedCompany {
@@ -55,7 +56,7 @@ interface ChallengeCompany {
   date: string;
   companyName: string;
   originalCompanyName: string;
-  challenges: any;
+  challenges: string[] | { challenges: any[]; summary: string } | any; // より具体的な型定義
   matches: MatchingResult[];
   totalMatches: number;
   sourceUrl: string;
@@ -982,10 +983,36 @@ export default function Home() {
       // 結果をスプレッドシート用の形式に変換（新しい形式）
       const results = challengeCompanies.flatMap(company => {
         const excludedSpeakers = company.filterStats?.excludedSpeakers?.join(', ') || '';
-        const challenges = company.challenges || [];
         const matches = company.matches || company.comprehensiveMatches || [];
 
-        if (challenges.length === 0) {
+        // challengesの形式を確認してから処理
+        let challengesList: string[] = [];
+        
+        if (Array.isArray(company.challenges)) {
+          // 既に配列の場合
+          challengesList = company.challenges;
+        } else if (company.challenges && typeof company.challenges === 'object') {
+          // オブジェクト形式の場合（例：{challenges: [...], summary: "..."}）
+          if (company.challenges.challenges && Array.isArray(company.challenges.challenges)) {
+            challengesList = company.challenges.challenges.map((c: any) => 
+              typeof c === 'string' ? c : (c.description || c.title || String(c))
+            );
+          } else if (company.challenges.summary) {
+            challengesList = [company.challenges.summary];
+          }
+        } else if (typeof company.challenges === 'string') {
+          // 文字列の場合
+          challengesList = [company.challenges];
+        }
+
+        console.log(`企業 ${company.companyName} の課題データ:`, {
+          originalChallenges: company.challenges,
+          processedChallenges: challengesList,
+          challengesType: typeof company.challenges,
+          isArray: Array.isArray(company.challenges)
+        });
+
+        if (challengesList.length === 0) {
           return [{
             sheetName: company.sheetName || company.date,
             companyName: company.companyName,
@@ -996,14 +1023,28 @@ export default function Home() {
           }];
         }
 
-        return challenges.map((challenge: string) => ({
-          sheetName: company.sheetName || company.date,
-          companyName: company.companyName,
-          challenge: challenge,
-          excludedSpeakers,
-          matches: matches,
-          comprehensiveMatches: matches
-        }));
+        return challengesList.map((challenge: string) => {
+          // この課題に特化した企業のみを抽出
+          const challengeSpecificMatches = matches.filter((match: any) => {
+            // match.challenge が存在する場合（課題別マッチング結果）
+            if (match.challenge) {
+              return match.challenge === challenge;
+            }
+            // 古い形式の場合はそのまま使用
+            return true;
+          });
+
+          console.log(`課題「${challenge.substring(0, 50)}...」の専用マッチ数: ${challengeSpecificMatches.length}`);
+          
+          return {
+            sheetName: company.sheetName || company.date,
+            companyName: company.companyName,
+            challenge: challenge,
+            excludedSpeakers,
+            matches: challengeSpecificMatches,
+            comprehensiveMatches: challengeSpecificMatches
+          };
+        });
       });
 
       const res = await fetch('/api/sheets/write-results', {
@@ -1048,7 +1089,34 @@ export default function Home() {
 
       let dataToWrite;
 
-      if (!result.challenges || result.challenges.length === 0) {
+      // challengesの形式を確認してから処理
+      let challengesList: string[] = [];
+      
+      if (Array.isArray(result.challenges)) {
+        // 既に配列の場合
+        challengesList = result.challenges;
+      } else if (result.challenges && typeof result.challenges === 'object') {
+        // オブジェクト形式の場合（例：{challenges: [...], summary: "..."}）
+        if (result.challenges.challenges && Array.isArray(result.challenges.challenges)) {
+          challengesList = result.challenges.challenges.map((c: any) => 
+            typeof c === 'string' ? c : (c.description || c.title || String(c))
+          );
+        } else if (result.challenges.summary) {
+          challengesList = [result.challenges.summary];
+        }
+      } else if (typeof result.challenges === 'string') {
+        // 文字列の場合
+        challengesList = [result.challenges];
+      }
+
+      console.log(`単体企業 ${company.companyName} の課題データ:`, {
+        originalChallenges: result.challenges,
+        processedChallenges: challengesList,
+        challengesType: typeof result.challenges,
+        isArray: Array.isArray(result.challenges)
+      });
+
+      if (challengesList.length === 0) {
         dataToWrite = [{
           sheetName: company.sheetName || company.date,
           companyName: company.companyName,
@@ -1058,14 +1126,28 @@ export default function Home() {
           comprehensiveMatches: matches
         }];
       } else {
-        dataToWrite = result.challenges.map((challenge: string) => ({
-          sheetName: company.sheetName || company.date,
-          companyName: company.companyName,
-          challenge: challenge,
-          excludedSpeakers,
-          matches: matches,
-          comprehensiveMatches: matches
-        }));
+        dataToWrite = challengesList.map((challenge: string) => {
+          // この課題に特化した企業のみを抽出
+          const challengeSpecificMatches = matches.filter((match: any) => {
+            // match.challenge が存在する場合（課題別マッチング結果）
+            if (match.challenge) {
+              return match.challenge === challenge;
+            }
+            // 古い形式の場合はそのまま使用
+            return true;
+          });
+
+          console.log(`単体企業 課題「${challenge.substring(0, 50)}...」の専用マッチ数: ${challengeSpecificMatches.length}`);
+          
+          return {
+            sheetName: company.sheetName || company.date,
+            companyName: company.companyName,
+            challenge: challenge,
+            excludedSpeakers,
+            matches: challengeSpecificMatches,
+            comprehensiveMatches: challengeSpecificMatches
+          };
+        });
       }
 
       const res = await fetch('/api/sheets/write-results', {
@@ -1113,6 +1195,32 @@ export default function Home() {
       {/* Actions (error only) */}
       <section className="container mx-auto px-4 -mt-8 relative z-20">
         {globalError && <p className="text-red-400 bg-red-900/30 border border-red-800 p-3 rounded-md mb-4">Error: {globalError}</p>}
+        
+        {/* 自動化システム案内 */}
+        <div className="bg-gradient-to-r from-green-500 to-blue-600 rounded-xl p-6 mb-8 text-white shadow-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-bold mb-2">🤖 自動化システム</h3>
+              <p className="text-green-100">
+                スプレッドシートに新しいデータが追加されたら自動で課題抽出・マッチング処理を実行
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <a 
+                href="/automation" 
+                className="bg-white text-green-600 hover:bg-green-50 px-4 py-2 rounded-lg font-semibold transition-colors"
+              >
+                管理画面
+              </a>
+              <a 
+                href="/persona" 
+                className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+              >
+                ペルソナ分析
+              </a>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* 新しい日付選択セクション */}

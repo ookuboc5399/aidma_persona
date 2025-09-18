@@ -182,43 +182,124 @@ ${truncatedData}`
   }
 }
 
+// 課題からキーワードを抽出する関数
+function extractKeywordsFromChallenges(challenges: string[]): string[] {
+  const keywordMap: { [key: string]: string[] } = {
+    'マーケティング': ['マーケティング', '広告', 'プロモーション', '宣伝', 'ブランディング', 'PR', 'デザイン', 'クリエイティブ'],
+    '資料': ['資料', 'チラシ', 'パンフレット', 'カタログ', 'デザイン', 'DTP', '印刷', '制作'],
+    '新規顧客': ['新規顧客', '営業', 'セールス', '開拓', 'アプローチ', '獲得', '集客', 'リード'],
+    'アプローチ': ['営業', 'セールス', 'アプローチ', '提案', '商談', 'テレアポ', 'コールセンター'],
+    '顧客獲得': ['営業', 'セールス', 'マーケティング', '集客', 'リード', '広告'],
+    '売上': ['売上', '営業', 'セールス', '収益', 'マーケティング'],
+    '競合': ['競合', '差別化', 'ブランディング', '戦略', 'コンサルティング'],
+    '開発': ['開発', 'システム', 'IT', 'エンジニア', 'プログラミング', '技術'],
+    '人材': ['人材', '採用', 'HR', '教育', '研修', 'トレーニング'],
+    '効率': ['効率', 'システム', 'IT', '自動化', 'DX', 'デジタル'],
+    '品質': ['品質', '改善', 'コンサルティング', '管理', '監査']
+  };
+
+  const keywords = new Set<string>();
+  
+  challenges.forEach(challenge => {
+    const challengeUpper = challenge.toUpperCase();
+    
+    Object.entries(keywordMap).forEach(([key, values]) => {
+      if (challengeUpper.includes(key.toUpperCase())) {
+        values.forEach(keyword => keywords.add(keyword));
+      }
+    });
+    
+    // 課題文から直接キーワードを抽出
+    const directKeywords = challenge.match(/[ァ-ヶー]+|[a-zA-Z]+/g) || [];
+    directKeywords.forEach(keyword => {
+      if (keyword.length >= 2) {
+        keywords.add(keyword);
+      }
+    });
+  });
+  
+  return Array.from(keywords).slice(0, 10); // 最大10個のキーワード
+}
+
 // ChatGPT マッチング関数
 async function chatGPTMatching(challenges: string[]): Promise<any[]> {
   try {
     console.log('🤖 ChatGPT マッチング処理実行');
+    console.log(`課題: ${challenges.join(', ')}`);
     
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    // 企業データを取得
-    const companiesQuery = `
+    // 課題に関連するキーワードを抽出
+    const challengeKeywords = extractKeywordsFromChallenges(challenges);
+    console.log(`課題関連キーワード: ${challengeKeywords.join(', ')}`);
+
+    // 課題に関連する企業データを複数の方法で取得して多様性を確保
+    let companies: any[] = [];
+    
+    // 1. 課題関連度の高い企業を取得 (30社)
+    if (challengeKeywords.length > 0) {
+      const relevantCompaniesQuery = `
+        SELECT 
+          COMPANY_ID, COMPANY_NAME, INDUSTRY, REGION, PREFECTURE,
+          BUSINESS_TAGS, ORIGINAL_TAGS, BUSINESS_DESCRIPTION,
+          CHALLENGES, STRENGTHS, OFFICIAL_WEBSITE, CONSULTANT_NAME,
+          (
+            ${challengeKeywords.map(keyword => 
+              `CASE WHEN UPPER(BUSINESS_DESCRIPTION) LIKE UPPER('%${keyword}%') 
+                    OR UPPER(BUSINESS_TAGS) LIKE UPPER('%${keyword}%') 
+                    OR UPPER(STRENGTHS) LIKE UPPER('%${keyword}%') 
+               THEN 1 ELSE 0 END`
+            ).join(' + ')}
+          ) as relevance_score
+        FROM COMPANIES
+        WHERE COMPANY_NAME IS NOT NULL 
+          AND BUSINESS_DESCRIPTION IS NOT NULL 
+          AND BUSINESS_DESCRIPTION != ''
+        ORDER BY relevance_score DESC, RANDOM()
+        LIMIT 30
+      `;
+      
+      const relevantCompanies = await snowflakeClient.executeQuery(relevantCompaniesQuery);
+      companies.push(...relevantCompanies);
+      console.log(`関連度重視企業取得: ${relevantCompanies.length}社`);
+    }
+    
+    // 2. ランダムな企業を取得して多様性を確保 (20社)
+    const randomCompaniesQuery = `
       SELECT 
-        COMPANY_ID,
-        COMPANY_NAME,
-        INDUSTRY,
-        REGION,
-        PREFECTURE,
-        BUSINESS_TAGS,
-        ORIGINAL_TAGS,
-        BUSINESS_DESCRIPTION,
-        CHALLENGES,
-        STRENGTHS,
-        OFFICIAL_WEBSITE,
-        CONSULTANT_NAME
+        COMPANY_ID, COMPANY_NAME, INDUSTRY, REGION, PREFECTURE,
+        BUSINESS_TAGS, ORIGINAL_TAGS, BUSINESS_DESCRIPTION,
+        CHALLENGES, STRENGTHS, OFFICIAL_WEBSITE, CONSULTANT_NAME,
+        0 as relevance_score
       FROM COMPANIES
       WHERE COMPANY_NAME IS NOT NULL 
         AND BUSINESS_DESCRIPTION IS NOT NULL 
         AND BUSINESS_DESCRIPTION != ''
+        AND COMPANY_ID NOT IN (${companies.map(c => `'${c.COMPANY_ID}'`).join(',') || "''"})
       ORDER BY RANDOM()
-      LIMIT 50
+      LIMIT 20
     `;
     
-    const companies = await snowflakeClient.executeQuery(companiesQuery);
-    console.log(`企業データ取得: ${companies.length}社`);
+    const randomCompanies = await snowflakeClient.executeQuery(randomCompaniesQuery);
+    companies.push(...randomCompanies);
+    
+    console.log(`総企業データ取得: ${companies.length}社`);
+    console.log(`関連度の高い企業上位5社:`, companies.slice(0, 5).map(c => ({
+      name: c.COMPANY_NAME,
+      score: c.RELEVANCE_SCORE || c.relevance_score,
+      industry: c.INDUSTRY
+    })));
 
     const prompt = `
 以下の課題を解決できる企業を3社選んでください。
+
+【重要な選択基準】
+1. この特定の課題に対して最も専門性が高い企業を選ぶ
+2. 課題の内容に最も適した事業内容・強み・タグを持つ企業を優先する
+3. 汎用的な企業ではなく、この課題領域に特化した企業を選ぶ
+4. 異なる課題には異なる企業を選ぶ（同じ企業を複数の課題で選ばない）
 
 課題:
 ${challenges.map((challenge, index) => `${index + 1}. ${challenge}`).join('\n')}
@@ -231,6 +312,7 @@ ${index + 1}. 企業名: ${company.COMPANY_NAME}
    事業内容: ${company.BUSINESS_DESCRIPTION}
    強み: ${company.STRENGTHS}
    タグ: ${company.BUSINESS_TAGS}
+   コンサルタント名: ${company.CONSULTANT_NAME || 'なし'}
 `).join('\n')}
 
 以下のJSON形式で回答してください:
@@ -249,7 +331,7 @@ ${index + 1}. 企業名: ${company.COMPANY_NAME}
       "challenges": "企業が抱える課題",
       "strengths": "企業の強み",
       "official_website": "公式サイト",
-      "consultant_name": "コンサルタント名",
+      "consultant_name": "企業データに記載されているコンサルタント名（なしの場合は空文字）",
       "match_score": 0.95,
       "match_reason": "マッチング理由",
       "solution_details": "解決方法の詳細"
@@ -263,7 +345,7 @@ ${index + 1}. 企業名: ${company.COMPANY_NAME}
       messages: [
         {
           role: "system",
-          content: "あなたは企業マッチングの専門家です。課題を解決できる最適な企業を選出してください。"
+          content: "あなたは企業マッチングの専門家です。提示された特定の課題を解決できる最適な企業を選出してください。【重要】各課題に対して、その課題の専門領域に最も特化した企業を選んでください。汎用的な企業ではなく、課題領域に深い専門性を持つ企業を優先してください。同じ企業を複数の異なる課題で選ばないよう、課題ごとに最適な企業を慎重に選択してください。提供された企業データに記載されている情報のみを使用し、データにない情報は推測せず実際の値を使用してください。"
         },
         {
           role: "user",
@@ -418,141 +500,159 @@ async function semanticMatching(challenges: string[]): Promise<any[]> {
 // 総合課題マッチング - すべての課題を考慮して最適な企業を選出
 async function findMatchingCompanies(challenges: string[]): Promise<any[]> {
   try {
-    console.log('=== 総合課題マッチング開始 ===');
+    console.log('=== 課題別個別マッチング開始 ===');
     console.log(`課題数: ${challenges.length}`);
     challenges.forEach((challenge, index) => {
       console.log(`課題${index + 1}: ${challenge}`);
     });
 
-    // 1. ChatGPT マッチング (第一優先)
-    try {
-      const chatGPTResult = await chatGPTMatching(challenges);
-      if (chatGPTResult[0].success && chatGPTResult[0].comprehensiveMatches.length > 0) {
-        console.log('✅ ChatGPT マッチング成功');
-        const convertedResult = [{
-          challenges: challenges,
-          matches: chatGPTResult[0].comprehensiveMatches || [],
-          matchingMethod: 'chatgpt-matching',
-          totalScore: chatGPTResult[0].comprehensiveMatches?.reduce((sum: number, match: any) => sum + (match.match_score || 0), 0) || 0
-        }];
-        return convertedResult;
-      }
-    } catch (error) {
-      console.log('⚠️ ChatGPT マッチング失敗、次の方法を試行します');
-    }
+    const results = [];
 
-    // 2. Snowflake AI マッチング (第二優先)
-    try {
-      console.log('🔄 Snowflake AI マッチング処理実行');
-      
-      const aiMatchResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/snowflake/ai-match`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ challenges })
-      });
+    // 各課題に対して個別にマッチング処理を実行
+    for (let i = 0; i < challenges.length; i++) {
+      const challenge = challenges[i];
+      console.log(`\n--- 課題${i + 1}のマッチング処理開始: ${challenge} ---`);
 
-      if (aiMatchResponse.ok) {
-        const aiResult = await aiMatchResponse.json();
-        console.log(`✅ Snowflake AI マッチング結果: ${aiResult.totalMatches}社が選出されました`);
-        
-        if (aiResult.matches && aiResult.matches.length > 0) {
-          const limitedMatches = aiResult.matches.slice(0, 3);
-          const convertedResult = [{
-            challenges: challenges,
-            matches: limitedMatches || [],
-            matchingMethod: 'snowflake-ai-matching',
-            totalScore: limitedMatches?.reduce((sum: number, match: any) => sum + (match.match_score || 0), 0) || 0
-          }];
-          return convertedResult;
+      // 1. ChatGPT マッチング (第一優先) - 単一課題で実行
+      try {
+        const chatGPTResult = await chatGPTMatching([challenge]); // 単一課題で実行
+        if (chatGPTResult[0].success && chatGPTResult[0].comprehensiveMatches.length > 0) {
+          console.log(`✅ 課題${i + 1} ChatGPT マッチング成功`);
+          results.push({
+            challenge: challenge,
+            matches: chatGPTResult[0].comprehensiveMatches || [],
+            matchingMethod: 'chatgpt-matching',
+            totalScore: chatGPTResult[0].comprehensiveMatches?.reduce((sum: number, match: any) => sum + (match.match_score || 0), 0) || 0
+          });
+          continue; // 次の課題へ
         }
+      } catch (error) {
+        console.log(`⚠️ 課題${i + 1} ChatGPT マッチング失敗、次の方法を試行します`);
       }
-    } catch (error) {
-      console.log('⚠️ Snowflake AI マッチング失敗、次の方法を試行します');
-    }
 
-    // 3. セマンティック検索 (第三優先)
-    try {
-      const semanticResult = await semanticMatching(challenges);
-      if (semanticResult[0].success && semanticResult[0].comprehensiveMatches.length > 0) {
-        console.log('✅ セマンティック検索成功');
-        const convertedResult = [{
-          challenges: challenges,
-          matches: semanticResult[0].comprehensiveMatches || [],
-          matchingMethod: 'semantic-matching',
-          totalScore: semanticResult[0].comprehensiveMatches?.reduce((sum: number, match: any) => sum + (match.match_score || 0), 0) || 0
-        }];
-        return convertedResult;
+      // 2. Snowflake AI マッチング (第二優先) - 単一課題で実行
+      try {
+        console.log(`🔄 課題${i + 1} Snowflake AI マッチング処理実行`);
+        
+        const aiMatchResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/snowflake/ai-match`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ challenges: [challenge] }) // 単一課題で実行
+        });
+
+        if (aiMatchResponse.ok) {
+          const aiResult = await aiMatchResponse.json();
+          console.log(`✅ 課題${i + 1} Snowflake AI マッチング結果: ${aiResult.totalMatches}社が選出されました`);
+          
+          if (aiResult.matches && aiResult.matches.length > 0) {
+            const limitedMatches = aiResult.matches.slice(0, 3);
+            results.push({
+              challenge: challenge,
+              matches: limitedMatches || [],
+              matchingMethod: 'snowflake-ai-matching',
+              totalScore: limitedMatches?.reduce((sum: number, match: any) => sum + (match.match_score || 0), 0) || 0
+            });
+            continue; // 次の課題へ
+          }
+        }
+      } catch (error) {
+        console.log(`⚠️ 課題${i + 1} Snowflake AI マッチング失敗、次の方法を試行します`);
       }
-    } catch (error) {
-      console.log('⚠️ セマンティック検索失敗、最終手段を実行します');
-    }
 
-    // 4. ランダム選択 (最終手段)
-    console.log('🎲 ランダム企業選出を実行');
-    const randomQuery = `
-      SELECT
-        COMPANY_ID,
-        COMPANY_NAME,
-        INDUSTRY,
-        REGION,
-        PREFECTURE,
-        BUSINESS_TAGS,
-        ORIGINAL_TAGS,
-        BUSINESS_DESCRIPTION,
-        CHALLENGES,
-        STRENGTHS,
-        OFFICIAL_WEBSITE,
-        CONSULTANT_NAME,
-        0.3 as match_score,
-        'ランダム選出' as match_reason,
-        'システムによる自動選出' as solution_details
-      FROM COMPANIES
-      WHERE COMPANY_NAME IS NOT NULL
-        AND BUSINESS_DESCRIPTION IS NOT NULL
-        AND BUSINESS_DESCRIPTION != ''
-      ORDER BY RANDOM()
-      LIMIT 50
-    `;
-    
-    const results = await snowflakeClient.executeQuery(randomQuery);
-    const randomMatches = results.map((row: any) => ({
-      challenge: challenges[0] || '課題不明',
+      // 3. セマンティック検索 (第三優先) - 単一課題で実行
+      try {
+        const semanticResult = await semanticMatching([challenge]); // 単一課題で実行
+        if (semanticResult[0].success && semanticResult[0].comprehensiveMatches.length > 0) {
+          console.log(`✅ 課題${i + 1} セマンティック検索成功`);
+          results.push({
+            challenge: challenge,
+            matches: semanticResult[0].comprehensiveMatches || [],
+            matchingMethod: 'semantic-matching',
+            totalScore: semanticResult[0].comprehensiveMatches?.reduce((sum: number, match: any) => sum + (match.match_score || 0), 0) || 0
+          });
+          continue; // 次の課題へ
+        }
+      } catch (error) {
+        console.log(`⚠️ 課題${i + 1} セマンティック検索失敗、最終手段を実行します`);
+      }
+
+      // 4. ランダム選択 (最終手段) - 単一課題で実行
+      console.log(`🎲 課題${i + 1} ランダム企業選出を実行`);
+      const randomQuery = `
+        SELECT
+          COMPANY_ID,
+          COMPANY_NAME,
+          INDUSTRY,
+          REGION,
+          PREFECTURE,
+          BUSINESS_TAGS,
+          ORIGINAL_TAGS,
+          BUSINESS_DESCRIPTION,
+          CHALLENGES,
+          STRENGTHS,
+          OFFICIAL_WEBSITE,
+          CONSULTANT_NAME,
+          0.3 as match_score,
+          'ランダム選出' as match_reason,
+          'システムによる自動選出' as solution_details
+        FROM COMPANIES
+        WHERE COMPANY_NAME IS NOT NULL
+          AND BUSINESS_DESCRIPTION IS NOT NULL
+          AND BUSINESS_DESCRIPTION != ''
+        ORDER BY RANDOM()
+        LIMIT 3
+      `;
+      
+      const randomResults = await snowflakeClient.executeQuery(randomQuery);
+      const randomMatches = randomResults.map((row: any) => ({
+        challenge: challenge,
       company_id: row.COMPANY_ID,
       company_name: row.COMPANY_NAME,
       industry: row.INDUSTRY,
       region: row.REGION,
       prefecture: row.PREFECTURE,
-      business_tags: row.BUSINESS_TAGS,
-      original_tags: row.ORIGINAL_TAGS,
-      business_description: row.BUSINESS_DESCRIPTION,
-      challenges: row.CHALLENGES,
-      strengths: row.STRENGTHS,
-      official_website: row.OFFICIAL_WEBSITE,
-      consultant_name: row.CONSULTANT_NAME,
-      match_score: row.MATCH_SCORE,
-      match_reason: row.MATCH_REASON,
-      solution_details: row.SOLUTION_DETAILS
-    }));
+        business_tags: row.BUSINESS_TAGS,
+        original_tags: row.ORIGINAL_TAGS,
+        business_description: row.BUSINESS_DESCRIPTION,
+        challenges: row.CHALLENGES,
+        strengths: row.STRENGTHS,
+        official_website: row.OFFICIAL_WEBSITE,
+        consultant_name: row.CONSULTANT_NAME,
+        match_score: row.MATCH_SCORE,
+        match_reason: row.MATCH_REASON,
+        solution_details: row.SOLUTION_DETAILS
+      }));
 
-    console.log(`✅ ランダム選出結果: ${randomMatches.length}社が選出されました`);
+      console.log(`✅ 課題${i + 1} ランダム選出結果: ${randomMatches.length}社が選出されました`);
+      
+      results.push({
+        challenge: challenge,
+        matches: randomMatches || [],
+        matchingMethod: 'random-matching',
+        totalScore: randomMatches?.reduce((sum: number, match: any) => sum + (match.match_score || 0), 0) || 0
+      });
+
+      // 課題間の処理で多様性を確保するため短い遅延を追加
+      if (i < challenges.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    console.log(`\n=== 課題別個別マッチング完了 ===`);
+    console.log(`処理した課題数: ${challenges.length}`);
+    console.log(`マッチング結果数: ${results.length}`);
     
-    const convertedResult = [{
-      challenges: challenges,
-      matches: randomMatches || [],
-      matchingMethod: 'random-matching',
-      totalScore: randomMatches?.reduce((sum: number, match: any) => sum + (match.match_score || 0), 0) || 0
-    }];
-    
-    return convertedResult;
+    return results;
 
   } catch (matchingError) {
-    console.error(`🚨 総合マッチング処理エラー:`, matchingError);
-    return [{
-      challenges: challenges,
+    console.error(`🚨 課題別マッチング処理エラー:`, matchingError);
+    // 各課題に対してエラー結果を返す
+    return challenges.map(challenge => ({
+      challenge: challenge,
       matches: [],
-      matchingMethod: 'comprehensive-matching',
+      matchingMethod: 'error-fallback',
       error: `Processing Error: ${getErrorMessage(matchingError)}`
-    }];
+    }));
   }
 }
 
@@ -650,15 +750,35 @@ export async function POST(req: NextRequest) {
     const matchingResults = await findMatchingCompanies(challenges);
     console.log(`マッチング結果: ${matchingResults.length}件の課題に対してマッチング完了`);
 
-    // 総合マッチング結果を取得
-    const comprehensiveResult = matchingResults[0]; // 総合マッチング結果（単一結果）
-    const selectedCompanies = comprehensiveResult?.matches || [];
+    // 課題別マッチング結果を課題との関連性を保持して統合
+    const challengeBasedMatches = matchingResults.flatMap(result => {
+      return (result.matches || []).map((match: any) => ({
+        ...match,
+        challenge: result.challenge,
+        challengeMatchingMethod: result.matchingMethod,
+        challengeScore: match.match_score || 0
+      }));
+    });
+    
+    const selectedCompanies = challengeBasedMatches;
     
     console.log('=== マッチング結果デバッグ ===');
     console.log(`matchingResults長さ: ${matchingResults.length}`);
-    console.log(`comprehensiveResult:`, comprehensiveResult);
+    console.log(`課題別マッチング統合数: ${challengeBasedMatches.length}`);
+    console.log(`課題別結果詳細:`, matchingResults.map(r => ({
+      challenge: r.challenge?.substring(0, 50) + '...',
+      matchCount: r.matches?.length || 0,
+      method: r.matchingMethod,
+      topCompany: r.matches?.[0]?.company_name || 'なし'
+    })));
     console.log(`selectedCompanies長さ: ${selectedCompanies.length}`);
-    console.log(`selectedCompanies:`, selectedCompanies);
+    
+    // 課題別マッチング結果の詳細ログ
+    selectedCompanies.forEach((match, index) => {
+      if (index < 5) { // 最初の5件のみログ出力
+        console.log(`マッチ${index + 1}: ${match.company_name} → 課題「${match.challenge?.substring(0, 30)}...」`);
+      }
+    });
 
     const result = {
       success: true,

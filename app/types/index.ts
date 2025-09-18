@@ -49,6 +49,7 @@ export interface MatchingResult {
   considerations: string[];
   implementation_timeline: string;
   estimated_cost: string;
+  consultant_name?: string; // CONSULTANT_NAMEフィールドを追加
 }
 
 export interface ProcessResult {

@@ -102,8 +102,9 @@ export async function POST(req: NextRequest) {
         PREFECTURE,
         
         EMPLOYEE_COUNT,
-                  INCORPORATION_DATE,
+        INCORPORATION_DATE,
         OFFICIAL_WEBSITE,
+        CONSULTANT_NAME,
         keyword_match_score,
         industry_match_score,
         size_compatibility_score,
@@ -135,6 +136,7 @@ export async function POST(req: NextRequest) {
       employee_count: row.EMPLOYEE_COUNT,
       incorporation_date: row.INCORPORATION_DATE,
       official_website: row.OFFICIAL_WEBSITE,
+      consultant_name: row.CONSULTANT_NAME, // CONSULTANT_NAMEを追加
       match_score: row.TOTAL_MATCH_SCORE,
       keyword_match_score: row.KEYWORD_MATCH_SCORE,
       industry_match_score: row.INDUSTRY_MATCH_SCORE,

@@ -59,7 +59,8 @@ export async function POST(req: NextRequest) {
         PREFECTURE,
         EMPLOYEE_COUNT,
         INCORPORATION_DATE,
-        OFFICIAL_WEBSITE
+        OFFICIAL_WEBSITE,
+        CONSULTANT_NAME
       FROM COMPANIES
       WHERE COMPANY_NAME != '${companyName.replace(/'/g, "''")}'
         AND COMPANY_NAME IS NOT NULL
@@ -127,6 +128,8 @@ export async function POST(req: NextRequest) {
           role: "system",
           content: `あなたは企業課題解決のマッチング専門家です。課題企業の課題と解決企業の強みを分析して、最適なマッチングを行ってください。
 
+重要：提供された企業データに記載されている情報のみを使用してください。データにない情報（コンサルタント名、特定の人名など）は推測や生成をせず、実際のデータの値を使用してください。データがない場合は空文字または「なし」を使用してください。
+
 マッチングの基準：
 1. 課題の解決可能性（技術・ノウハウの適合性）
 2. 企業の実績・信頼性
@@ -169,6 +172,7 @@ ${solutionCompanies.map(company =>
 事業タグ: ${JSON.stringify(company.BUSINESS_TAGS || []).substring(0, 100)}...
 地域: ${company.REGION || '未設定'}
 従業員数: ${company.EMPLOYEE_COUNT || '未設定'}
+コンサルタント名: ${company.CONSULTANT_NAME || 'なし'}
 ---`
 ).join('\n')}
 `

@@ -125,6 +125,7 @@ export async function POST(req: NextRequest) {
           challenges: row.CHALLENGES,
           strengths: row.STRENGTHS,
           official_website: row.OFFICIAL_WEBSITE,
+          consultant_name: row.CONSULTANT_NAME, // CONSULTANT_NAMEを追加
           match_score: row.TOTAL_MATCH_SCORE,
           semantic_similarity: row.SEMANTIC_SIMILARITY,
           industry_bonus: row.INDUSTRY_BONUS,
