@@ -282,8 +282,25 @@ async function chatGPTMatching(challenges: string[]): Promise<any[]> {
       LIMIT 20
     `;
     
-    const randomCompanies = await snowflakeClient.executeQuery(randomCompaniesQuery);
-    companies.push(...randomCompanies);
+     const randomCompanies = await snowflakeClient.executeQuery(randomCompaniesQuery);
+     companies.push(...randomCompanies);
+     
+     // デバッグ: 実際のCONSULTANT_NAMEデータを確認
+     console.log(`=== CONSULTANT_NAMEデバッグ（最初の5件）===`);
+     companies.slice(0, 5).forEach((company, index) => {
+       console.log(`企業${index + 1}: ${company.COMPANY_NAME} → コンサルタント名: "${company.CONSULTANT_NAME}"`);
+     });
+    
+    // デバッグ: companiesの型を確認
+    console.log(`companies type:`, typeof companies);
+    console.log(`companies is Array:`, Array.isArray(companies));
+    console.log(`companies length:`, companies?.length || 'undefined');
+    
+    // companiesが配列でない場合は空配列に修正
+    if (!Array.isArray(companies)) {
+      console.warn(`⚠️ companies is not an array, resetting to empty array`);
+      companies = [];
+    }
     
     console.log(`総企業データ取得: ${companies.length}社`);
     console.log(`関連度の高い企業上位5社:`, companies.slice(0, 5).map(c => ({
@@ -305,15 +322,16 @@ async function chatGPTMatching(challenges: string[]): Promise<any[]> {
 ${challenges.map((challenge, index) => `${index + 1}. ${challenge}`).join('\n')}
 
 企業データ:
-${companies.map((company: any, index: number) => `
-${index + 1}. 企業名: ${company.COMPANY_NAME}
+${companies.map((company: any, index: number) => {
+  return `${index + 1}. 企業名: ${company.COMPANY_NAME}
    業種: ${company.INDUSTRY}
    地域: ${company.REGION}
    事業内容: ${company.BUSINESS_DESCRIPTION}
    強み: ${company.STRENGTHS}
    タグ: ${company.BUSINESS_TAGS}
    コンサルタント名: ${company.CONSULTANT_NAME || 'なし'}
-`).join('\n')}
+   [デバッグ] 実際のDB値: "${company.CONSULTANT_NAME}"`;
+}).join('\n')}
 
 以下のJSON形式で回答してください:
 {
@@ -331,13 +349,19 @@ ${index + 1}. 企業名: ${company.COMPANY_NAME}
       "challenges": "企業が抱える課題",
       "strengths": "企業の強み",
       "official_website": "公式サイト",
-      "consultant_name": "企業データに記載されているコンサルタント名（なしの場合は空文字）",
+      "consultant_name": "企業データに記載されているコンサルタント名そのまま（「なし」の場合は空文字\"\"、絶対に架空の名前を生成しない）",
       "match_score": 0.95,
       "match_reason": "マッチング理由",
       "solution_details": "解決方法の詳細"
     }
   ]
 }
+
+【重要な注意事項】
+- consultant_nameは企業データに記載されている値をそのまま使用すること
+- 企業データで「なし」と表示されている場合は空文字（""）を返すこと
+- 田中太郎、佐藤花子のような架空の名前を絶対に生成しないこと
+- 全ての情報は提供された企業データから正確にコピーすること
 `;
 
     const completion = await openai.chat.completions.create({
@@ -345,7 +369,7 @@ ${index + 1}. 企業名: ${company.COMPANY_NAME}
       messages: [
         {
           role: "system",
-          content: "あなたは企業マッチングの専門家です。提示された特定の課題を解決できる最適な企業を選出してください。【重要】各課題に対して、その課題の専門領域に最も特化した企業を選んでください。汎用的な企業ではなく、課題領域に深い専門性を持つ企業を優先してください。同じ企業を複数の異なる課題で選ばないよう、課題ごとに最適な企業を慎重に選択してください。提供された企業データに記載されている情報のみを使用し、データにない情報は推測せず実際の値を使用してください。"
+          content: "あなたは企業マッチングの専門家です。提示された特定の課題を解決できる最適な企業を選出してください。【重要】各課題に対して、その課題の専門領域に最も特化した企業を選んでください。汎用的な企業ではなく、課題領域に深い専門性を持つ企業を優先してください。同じ企業を複数の異なる課題で選ばないよう、課題ごとに最適な企業を慎重に選択してください。【絶対禁止】提供された企業データに記載されている情報のみを使用し、データにない情報は絶対に推測・生成・創作しないでください。特にconsultant_nameは、企業データで「なし」と表示されている場合は空文字（\"\"）を返し、田中太郎や佐藤花子のような架空の名前を絶対に生成しないでください。"
         },
         {
           role: "user",
@@ -388,6 +412,17 @@ ${index + 1}. 企業名: ${company.COMPANY_NAME}
     }
 
     console.log(`✅ ChatGPT マッチング結果: ${result.matches?.length || 0}社が選出されました`);
+    
+    // 架空の名前をフィルタリングする安全装置
+    const suspiciousNames = ['田中太郎', '佐藤花子', '山田太郎', '鈴木一郎', '佐藤太郎', '田中花子'];
+    if (result.matches) {
+      result.matches.forEach((match: any, index: number) => {
+        if (match.consultant_name && suspiciousNames.includes(match.consultant_name)) {
+          console.warn(`⚠️ 架空の名前を検出: ${match.consultant_name} → 空文字に修正`);
+          match.consultant_name = '';
+        }
+      });
+    }
     
     return [{
       success: true,
